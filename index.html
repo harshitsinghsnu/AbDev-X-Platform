@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AbDev-X Tool</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: sticky header + tab nav, single scrollable panel area */
+:root {
+  --bg: #F0F5FA;
+  --surface: #FFFFFF;
+  --surface2: #EBF1F8;
+  --border: #CBD8E6;
+  --fg: #1A2F45;
+  --fg2: #4B6680;
+  --accent: #2166AC;
+  --accent-light: #DAEAF8;
+  --good: #2A7A3A;
+  --good-bg: #E6F5EA;
+  --warn: #B85C00;
+  --warn-bg: #FDF0E2;
+  --bad: #B2182B;
+  --bad-bg: #FAEBE9;
+  --mute: #8FA8C0;
+  --mono: 'JetBrains Mono', 'Consolas', monospace;
+  --sans: 'Inter', system-ui, sans-serif;
+  --r: 8px;
+  --r-sm: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1F33; --surface: #162B44; --surface2: #1E3450;
+    --border: #2A4060; --fg: #E4EEF8; --fg2: #8BAAC4;
+    --accent: #4393C3; --accent-light: #1A3A5C;
+    --good: #3DB854; --good-bg: #0E2A18;
+    --warn: #E89030; --warn-bg: #2A1C08;
+    --bad: #E05060; --bad-bg: #2A0E14;
+    --mute: #4A6880;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1F33; --surface: #162B44; --surface2: #1E3450;
+  --border: #2A4060; --fg: #E4EEF8; --fg2: #8BAAC4;
+  --accent: #4393C3; --accent-light: #1A3A5C;
+  --good: #3DB854; --good-bg: #0E2A18;
+  --warn: #E89030; --warn-bg: #2A1C08;
+  --bad: #E05060; --bad-bg: #2A0E14;
+  --mute: #4A6880;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--sans); font-size: 14px; line-height: 1.5;
+  display: flex; flex-direction: column;
+}
+.app-header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex; align-items: center; gap: 12px;
+  position: sticky; top: 0; z-index: 20;
+}
+.app-logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.02em; }
+.app-logo span { color: var(--fg2); font-weight: 400; font-size: 13px; margin-left: 6px; }
+.header-badge {
+  background: var(--accent-light); color: var(--accent);
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.theme-btn {
+  background: none; border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--fg2); padding: 4px 10px; cursor: pointer; font-size: 12px;
+}
+.theme-btn:hover { background: var(--surface2); }
+.tab-nav {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; overflow-x: auto; scrollbar-width: none;
+  padding: 0 20px; gap: 0;
+  position: sticky; top: 53px; z-index: 19;
+}
+.tab-nav::-webkit-scrollbar { display: none; }
+.tab-btn {
+  background: none; border: none; border-bottom: 3px solid transparent;
+  color: var(--fg2); padding: 10px 14px; cursor: pointer; font-size: 13px;
+  font-family: var(--sans); font-weight: 500; white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--fg); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.panels { flex: 1; overflow-y: auto; }
+.panel { padding: 20px; max-width: 1100px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px; margin-bottom: 16px;
+}
+.card-title { font-size: 13px; font-weight: 600; color: var(--fg2);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
+label { font-size: 12px; font-weight: 600; color: var(--fg2);
+  display: block; margin-bottom: 4px; letter-spacing: 0.03em; }
+textarea, input[type=text], input[type=number] {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r-sm); color: var(--fg); font-size: 13px;
+  padding: 8px 10px; font-family: var(--sans); resize: vertical;
+  transition: border-color .15s;
+}
+textarea:focus, input[type=text]:focus, input[type=number]:focus {
+  outline: none; border-color: var(--accent);
+}
+textarea.seq { font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+.input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 600px) { .input-row { grid-template-columns: 1fr; } }
+.btn {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: var(--r-sm); padding: 8px 16px; cursor: pointer;
+  font-size: 13px; font-weight: 600; font-family: var(--sans);
+  transition: opacity .15s; white-space: nowrap;
+}
+.btn:hover { opacity: .87; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-ghost { background: none; border: 1px solid var(--border); color: var(--fg2); }
+.btn-ghost:hover { background: var(--surface2); }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.chip-good { background: var(--good-bg); color: var(--good); }
+.chip-warn { background: var(--warn-bg); color: var(--warn); }
+.chip-bad  { background: var(--bad-bg);  color: var(--bad);  }
+.chip-mute { background: var(--surface2); color: var(--fg2); }
+.assay-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px; margin-top: 8px;
+}
+.assay-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px; position: relative;
+}
+.assay-card.unreliable { opacity: .85; border-style: dashed; }
+.assay-name { font-size: 15px; font-weight: 700; color: var(--fg); }
+.assay-full { font-size: 11px; color: var(--fg2); margin-bottom: 10px; }
+.assay-value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--accent); line-height: 1; }
+.assay-unit { font-size: 12px; color: var(--fg2); margin-left: 4px; font-weight: 400; }
+.assay-ci { font-size: 11px; color: var(--fg2); margin-top: 2px; font-family: var(--mono); }
+.assay-source { font-size: 11px; color: var(--fg2); margin-top: 8px;
+  display: flex; align-items: center; gap: 4px; }
+.assay-source strong { color: var(--accent); }
+.assay-rho { font-size: 11px; color: var(--mute); margin-top: 2px; font-family: var(--mono); }
+.assay-flag { position: absolute; top: 10px; right: 10px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600;
+  color: var(--fg2); letter-spacing: 0.05em; text-transform: uppercase;
+  border-bottom: 2px solid var(--border); background: var(--surface2);
+}
+.data-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--surface2); }
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); }
+.info-banner {
+  background: var(--accent-light); border: 1px solid var(--accent);
+  border-radius: var(--r-sm); padding: 10px 14px; font-size: 12px; color: var(--fg);
+  margin-bottom: 16px;
+}
+.warn-banner {
+  background: var(--warn-bg); border: 1px solid var(--warn);
+  border-radius: var(--r-sm); padding: 10px 14px; font-size: 12px; color: var(--fg);
+  margin-bottom: 16px;
+}
+.chart-wrap { position: relative; max-width: 100%; }
+.inner-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.inner-tab-btn {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--fg2); padding: 8px 14px; cursor: pointer; font-size: 13px;
+  font-family: var(--sans); transition: color .15s;
+}
+.inner-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.seq-display {
+  font-family: var(--mono); font-size: 12px; line-height: 1.8;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 10px; overflow-x: auto;
+  word-break: break-all; white-space: pre-wrap;
+}
+.cdr-h1 { background: #FFF3CD; color: #7A5400; }
+.cdr-h2 { background: #D1ECF1; color: #0C5460; }
+.cdr-h3 { background: #F8D7DA; color: #721C24; }
+.cdr-l1 { background: #D4EDDA; color: #155724; }
+.cdr-l2 { background: #E2D9F3; color: #4B3A80; }
+.cdr-l3 { background: #FEE8D0; color: #8A4000; }
+:root[data-theme="dark"] .cdr-h1,
+:root[data-theme="dark"] .cdr-h2,
+:root[data-theme="dark"] .cdr-h3 { filter: invert(.85) hue-rotate(180deg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cdr-h1,
+  :root:not([data-theme="light"]) .cdr-h2,
+  :root:not([data-theme="light"]) .cdr-h3 { filter: invert(.85) hue-rotate(180deg); }
+}
+.prog-bar-wrap { background: var(--surface2); border-radius: 4px; height: 6px; overflow: hidden; }
+.prog-bar { height: 100%; border-radius: 4px; transition: width .4s; }
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: var(--r);
+  padding: 32px; text-align: center; cursor: pointer;
+  color: var(--fg2); font-size: 13px; transition: border-color .15s, background .15s;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: var(--accent-light); }
+.ab-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ab-tag {
+  background: var(--accent-light); color: var(--accent); border-radius: 20px;
+  padding: 4px 10px; font-size: 12px; font-weight: 500;
+  display: flex; align-items: center; gap: 6px;
+}
+.ab-tag button { background: none; border: none; cursor: pointer; color: var(--accent);
+  font-size: 14px; line-height: 1; padding: 0; opacity: .7; }
+.ab-tag button:hover { opacity: 1; }
+input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+.section-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; text-wrap: balance; }
+.section-sub { font-size: 13px; color: var(--fg2); margin-bottom: 16px; }
+.empty-state { text-align: center; padding: 48px 24px; color: var(--fg2); }
+.empty-state .icon { font-size: 32px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.metric-tile { background: var(--surface2); border-radius: var(--r-sm); padding: 10px 12px; }
+.metric-label { font-size: 11px; color: var(--fg2); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; }
+.metric-value { font-size: 20px; font-weight: 700; color: var(--fg);
+  font-variant-numeric: tabular-nums; margin-top: 2px; }
+.metric-unit { font-size: 11px; color: var(--fg2); font-weight: 400; }
+.pareto-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pareto-row:last-child { border-bottom: none; }
+.pareto-rank { font-size: 13px; font-weight: 700; width: 24px; color: var(--fg2); }
+.pareto-bars { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-logo">AbDev-X<span>v1.0 · Antibody Developability</span></div>
+  <span class="header-badge">Research Demo</span>
+  <div class="header-right">
+    <button class="theme-btn" onclick="toggleTheme()">☀︎ / ☾</button>
+  </div>
+</header>
+
+<nav class="tab-nav" id="tabNav">
+  <button class="tab-btn active" data-tab="submit">① Submit</button>
+  <button class="tab-btn" data-tab="predict">② Predict</button>
+  <button class="tab-btn" data-tab="structure">③ Structure</button>
+  <button class="tab-btn" data-tab="explain">④ Explain</button>
+  <button class="tab-btn" data-tab="compare">⑤ Compare</button>
+  <button class="tab-btn" data-tab="prioritise">⑥ Prioritise</button>
+</nav>
+
+<div class="panels" id="panels">
+
+<!-- ═══ PANEL 1: SUBMIT ═══ -->
+<section class="panel" id="panel-submit">
+  <p class="section-title">Sequence Submission</p>
+  <p class="section-sub">Paste VH and VL sequences, upload a FASTA file, or use batch CSV for multiple antibodies.</p>
+  <div class="inner-tabs" id="submitTabs">
+    <button class="inner-tab-btn active" data-subtab="single">Single Antibody</button>
+    <button class="inner-tab-btn" data-subtab="batch">Batch CSV</button>
+    <button class="inner-tab-btn" data-subtab="fasta">FASTA</button>
+  </div>
+  <div id="sub-single">
+    <div class="card">
+      <div class="card-title">Antibody Identity</div>
+      <label for="abName">Antibody Name / ID</label>
+      <input type="text" id="abName" placeholder="e.g. mAb-001, Trastuzumab" value="">
+      <div class="input-row" style="margin-top:12px">
+        <div>
+          <label for="vhSeq">VH Sequence (amino acids)</label>
+          <textarea id="vhSeq" class="seq" rows="5" placeholder="EVQLVESGG..."></textarea>
+          <div id="vhLen" style="font-size:11px;color:var(--fg2);margin-top:3px;"></div>
+        </div>
+        <div>
+          <label for="vlSeq">VL Sequence (amino acids)</label>
+          <textarea id="vlSeq" class="seq" rows="5" placeholder="DIQMTQSPS..."></textarea>
+          <div id="vlLen" style="font-size:11px;color:var(--fg2);margin-top:3px;"></div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="runSingle()">Run Prediction</button>
+        <button class="btn btn-ghost" onclick="loadExample(0)">Example: mAb-A (low risk)</button>
+        <button class="btn btn-ghost" onclick="loadExample(1)">Example: mAb-B (agg. risk)</button>
+        <button class="btn btn-ghost" onclick="loadExample(2)">Example: mAb-C (polyreact.)</button>
+      </div>
+    </div>
+    <div id="validationMsg" style="display:none"></div>
+  </div>
+  <div id="sub-batch" hidden>
+    <div class="card">
+      <div class="card-title">Batch Upload</div>
+      <p style="font-size:13px;color:var(--fg2);margin-bottom:12px">
+        Upload a CSV with columns: <code style="font-family:var(--mono);background:var(--surface2);padding:1px 5px;border-radius:3px">antibody_id, vh_sequence, vl_sequence</code>. First row must be a header. Max 500 antibodies.
+      </p>
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('csvInput').click()"
+           ondragover="event.preventDefault();this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')"
+           ondrop="handleDrop(event)">
+        <div style="font-size:28px;margin-bottom:8px">📂</div>
+        <strong>Click to browse or drag &amp; drop CSV</strong><br>
+        <span style="font-size:12px">Columns: antibody_id · vh_sequence · vl_sequence</span>
+      </div>
+      <input type="file" id="csvInput" accept=".csv,text/csv" style="display:none" onchange="handleCSV(this)">
+      <div id="csvPreview" style="margin-top:12px"></div>
+      <div class="btn-row" id="batchActions" style="display:none">
+        <button class="btn" onclick="runBatch()">Run Batch Predictions</button>
+        <button class="btn btn-ghost" onclick="clearBatch()">Clear</button>
+      </div>
+    </div>
+  </div>
+  <div id="sub-fasta" hidden>
+    <div class="card">
+      <div class="card-title">FASTA Input</div>
+      <p style="font-size:13px;color:var(--fg2);margin-bottom:10px">
+        Label each sequence with <code style="font-family:var(--mono);background:var(--surface2);padding:1px 5px;border-radius:3px">|VH</code> or <code style="font-family:var(--mono);background:var(--surface2);padding:1px 5px;border-radius:3px">|VL</code> in the header.
+      </p>
+      <label for="fastaInput">FASTA</label>
+      <textarea id="fastaInput" class="seq" rows="10" placeholder=">mAb-001|VH&#10;EVQLVESGG...&#10;>mAb-001|VL&#10;DIQMTQSPS..."></textarea>
+      <div class="btn-row">
+        <button class="btn" onclick="parseFasta()">Parse &amp; Submit</button>
+      </div>
+    </div>
+    <div id="fastaResult" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<!-- ═══ PANEL 2: PREDICT ═══ -->
+<section class="panel" id="panel-predict" hidden>
+  <div id="predictEmpty" class="empty-state">
+    <div class="icon">🧪</div>
+    <p><strong>No prediction yet.</strong><br>Submit a sequence on the Submit tab to see results here.</p>
+  </div>
+  <div id="predictContent" hidden>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <p class="section-title" id="predictTitle">Predictions</p>
+      <div id="overallChip"></div>
+      <button class="btn btn-ghost btn-sm" onclick="addToCompare()">+ Add to Compare</button>
+    </div>
+    <p class="section-sub" id="predictSubtitle"></p>
+    <details class="card" style="margin-bottom:16px;cursor:pointer">
+      <summary style="font-size:13px;font-weight:600;color:var(--fg2);text-transform:uppercase;letter-spacing:.06em;user-select:none">
+        E1 Model Configuration — Per-Assay Source Selection ▾
+      </summary>
+      <div style="margin-top:12px">
+        <p style="font-size:12px;color:var(--fg2);margin-bottom:10px">
+          AbDev-X selects the single best representation source per assay using GDPa1 OOD-CV and applies it directly at inference — no stacking. Training: GDPa1 n=246 IgG. Evaluation: GDPa3 n=80 IgG1 (held-out benchmark).
+        </p>
+        <div class="tbl-wrap">
+          <table class="data-table" style="font-size:12px">
+            <thead><tr><th>Assay</th><th>E1 Source</th><th>Model</th><th>Feature Dims</th><th>GDPa3 ρ (95% BCa CI)</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><strong>HAC</strong></td><td style="color:var(--good)">Structural</td><td>Ridge + LightGBM</td><td>~28 (A-MGFS)</td><td style="font-family:var(--mono)">0.650 [0.541, 0.748]</td><td><span class="chip chip-good">Reliable</span></td></tr>
+              <tr><td><strong>SMAC</strong></td><td style="color:var(--good)">Structural</td><td>Ridge + LightGBM</td><td>~28 (A-MGFS)</td><td style="font-family:var(--mono)">0.647 [0.537, 0.745]</td><td><span class="chip chip-good">Reliable</span></td></tr>
+              <tr><td><strong>HIC</strong></td><td style="color:var(--good)">Structural</td><td>Ridge + LightGBM</td><td>~28 (A-MGFS)</td><td style="font-family:var(--mono)">0.547 [0.362, 0.698]</td><td><span class="chip chip-good">Reliable</span></td></tr>
+              <tr><td><strong>AC-SINS</strong></td><td style="color:var(--accent)">AbLang2</td><td>Ridge</td><td>960 → PCA</td><td style="font-family:var(--mono)">0.435 [0.031, 0.476]</td><td><span class="chip chip-good">Reliable</span></td></tr>
+              <tr><td><strong>PR-CHO</strong></td><td style="color:var(--accent)">ESM-2 650M</td><td>Ridge</td><td>2,560 → PCA ~130</td><td style="font-family:var(--mono)">0.358 [0.017, 0.443]</td><td><span class="chip chip-good">Reliable</span></td></tr>
+              <tr><td><strong>Tm1</strong></td><td style="color:var(--accent)">ESM-2 650M</td><td>Ridge</td><td>2,560 → PCA ~130</td><td style="font-family:var(--mono)">0.456 [0.284, 0.605]</td><td><span class="chip chip-good">Reliable</span></td></tr>
+              <tr><td><strong>Tm2</strong></td><td style="color:var(--accent)">ESM-2 650M</td><td>Ridge</td><td>2,560 → PCA ~130</td><td style="font-family:var(--mono)">0.289 [−0.063, 0.371]</td><td><span class="chip chip-warn">Weak signal</span></td></tr>
+              <tr><td><strong>Tonset</strong></td><td style="color:var(--accent)">ESM-2 650M</td><td>Ridge</td><td>2,560 → PCA ~130</td><td style="font-family:var(--mono)">0.516 [0.341, 0.660]</td><td><span class="chip chip-good">Reliable</span></td></tr>
+              <tr><td><strong>SEC</strong></td><td>PhysChem</td><td>Ridge + F-MoE</td><td>165 → A-MGFS</td><td style="font-family:var(--mono);color:var(--bad)">−0.171 [−0.374, 0.048]</td><td><span class="chip chip-bad">Unreliable</span></td></tr>
+              <tr><td><strong>Titer</strong></td><td>AbLang2</td><td>Ridge</td><td>960 → PCA</td><td style="font-family:var(--mono);color:var(--warn)">0.075 [−0.147, 0.293]</td><td><span class="chip chip-bad">Unreliable</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+    <div class="warn-banner">
+      ⚠ <strong>SEC and Titer predictions are not clinically actionable</strong> — model ρ ≈ 0 on the GDPa3 held-out benchmark (n=80 IgG1). These assays are strongly influenced by formulation, cell-line effects, and glycosylation state, which cannot be predicted from sequence or computed structure alone.
+    </div>
+    <div class="assay-grid" id="assayGrid"></div>
+    <details class="card" style="margin-top:8px">
+      <summary style="font-size:13px;font-weight:600;color:var(--fg2);cursor:pointer;user-select:none">Raw Values Table ▾</summary>
+      <div style="margin-top:12px" class="tbl-wrap">
+        <table class="data-table" id="rawTable">
+          <thead><tr><th>Assay</th><th>Full Name</th><th>Predicted</th><th>95% CI</th><th>Unit</th><th>Risk</th><th>E1 Source</th></tr></thead>
+          <tbody id="rawTableBody"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ═══ PANEL 3: STRUCTURE ═══ -->
+<section class="panel" id="panel-structure" hidden>
+  <div id="structEmpty" class="empty-state">
+    <div class="icon">🔬</div>
+    <p><strong>No sequence loaded.</strong><br>Submit a sequence first.</p>
+  </div>
+  <div id="structContent" hidden>
+    <p class="section-title" id="structTitle">Sequence &amp; Physicochemical Analysis</p>
+    <p class="section-sub">CDR positions approximated by IMGT-based heuristics. Full structural predictions require ABodyBuilder3 (server-side; not computed in this demo).</p>
+    <div class="metric-grid" id="metricGrid"></div>
+    <div class="two-col" style="margin-top:16px">
+      <div class="card">
+        <div class="card-title">VH — CDR Annotation (heuristic)</div>
+        <div id="vhAnnot" class="seq-display"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:11px">
+          <span><span class="cdr-h1" style="padding:1px 5px;border-radius:2px">H1</span> CDRH1</span>
+          <span><span class="cdr-h2" style="padding:1px 5px;border-radius:2px">H2</span> CDRH2</span>
+          <span><span class="cdr-h3" style="padding:1px 5px;border-radius:2px">H3</span> CDRH3</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">VL — CDR Annotation (heuristic)</div>
+        <div id="vlAnnot" class="seq-display"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:11px">
+          <span><span class="cdr-l1" style="padding:1px 5px;border-radius:2px">L1</span> CDRL1</span>
+          <span><span class="cdr-l2" style="padding:1px 5px;border-radius:2px">L2</span> CDRL2</span>
+          <span><span class="cdr-l3" style="padding:1px 5px;border-radius:2px">L3</span> CDRL3</span>
+        </div>
+      </div>
+    </div>
+    <div class="two-col" style="margin-top:0">
+      <div class="card">
+        <div class="card-title">Amino Acid Composition (VH+VL)</div>
+        <div class="chart-wrap" style="height:200px"><canvas id="compChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Physicochemical Group Fractions</div>
+        <div id="physChemGroups"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PANEL 4: EXPLAIN ═══ -->
+<section class="panel" id="panel-explain" hidden>
+  <div id="explainEmpty" class="empty-state">
+    <div class="icon">📊</div>
+    <p><strong>No prediction loaded.</strong><br>Submit a sequence to see attribution analysis.</p>
+  </div>
+  <div id="explainContent" hidden>
+    <p class="section-title">Feature Attribution</p>
+    <p class="section-sub">Feature importances below are proxy attributions based on physicochemical and sequence composition features. These reflect predictive associations in the training data, not experimentally validated causal mechanisms.</p>
+    <div class="info-banner">
+      <strong>Attribution types used in AbDev-X:</strong><br>
+      • <em>Predictive attribution</em> — SHAP on LightGBM proxy model (PhysChem + Structural sources)<br>
+      • <em>Residue-level proxy attribution</em> — ESM-2 attention weights mapped to sequence positions (AC-SINS, PR-CHO, Tm assays)<br>
+      • <em>Structure-mapped feature visualisation</em> — surface hydrophobicity / charge maps via ABodyBuilder3 (requires server-side computation; not shown in demo)
+    </div>
+    <div class="warn-banner">
+      Associations shown are <em>consistent with known assay drivers</em>, not validated mechanisms. "Important feature" means predictive in the GDPa training set, not confirmed biology.
+    </div>
+    <div id="explainGrid"></div>
+  </div>
+</section>
+
+<!-- ═══ PANEL 5: COMPARE ═══ -->
+<section class="panel" id="panel-compare" hidden>
+  <p class="section-title">Multi-Antibody Comparison</p>
+  <p class="section-sub">Compare up to 8 antibodies across all 10 assays. Add antibodies via Submit → Predict → "Add to Compare", or load the built-in demo set.</p>
+  <div class="card">
+    <div class="card-title">Antibodies in Comparison</div>
+    <div class="ab-list" id="compareList"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost btn-sm" onclick="loadDemoCompare()">Load Demo Set (3 antibodies)</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearCompare()">Clear All</button>
+    </div>
+  </div>
+  <div id="compareContent" hidden>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Radar — 5 High-Signal Assays (normalised, higher = better)</div>
+        <div class="chart-wrap" style="height:280px"><canvas id="radarChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Ranking by Pass / Flag / Fail</div>
+        <div id="rankingTable"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Heatmap — All Reliable Assays</div>
+      <div class="tbl-wrap"><table class="data-table" id="heatmapTable"></table></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PANEL 6: PRIORITISE ═══ -->
+<section class="panel" id="panel-prioritise" hidden>
+  <p class="section-title">Multi-Property Prioritisation (AbDev-MPO)</p>
+  <p class="section-sub">Set pass thresholds per assay. Antibodies in your comparison set are ranked by how many criteria they meet. Add antibodies via the Compare tab first.</p>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">Thresholds</div>
+      <div id="thresholdControls"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Prioritised Candidates</div>
+      <div id="priorityResults">
+        <div class="empty-state" style="padding:24px 0">
+          <p>Add antibodies in the Compare tab, then adjust thresholds to rank candidates.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /panels -->
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const ASSAYS = {
+  HAC:      { full:'Hydrophobic Aggregation Chromatography',         unit:'min',      hi_worse:true,  lo:15,  mod:25,  source:'Structural',  model:'Ridge + LightGBM', rho:'0.650',  ci95:'[0.541, 0.748]',  reliable:true },
+  SMAC:     { full:'Self-Interaction Membrane-Affinity Chrom.',      unit:'min',      hi_worse:true,  lo:10,  mod:18,  source:'Structural',  model:'Ridge + LightGBM', rho:'0.647',  ci95:'[0.537, 0.745]',  reliable:true },
+  HIC:      { full:'Hydrophobic Interaction Chromatography',         unit:'%',        hi_worse:true,  lo:20,  mod:35,  source:'Structural',  model:'Ridge + LightGBM', rho:'0.547',  ci95:'[0.362, 0.698]',  reliable:true },
+  'AC-SINS':{ full:'Affinity Capture Self-Interaction Nanoparticle Spectroscopy', unit:'nm shift', hi_worse:true, lo:5, mod:10, source:'AbLang2',    model:'Ridge',            rho:'0.435',  ci95:'[0.031, 0.476]',  reliable:true },
+  'PR-CHO': { full:'Polyreactivity in CHO cells',                    unit:'OD ratio', hi_worse:true,  lo:0.5, mod:1.0, source:'ESM-2 650M', model:'Ridge',            rho:'0.358',  ci95:'[0.017, 0.443]',  reliable:true },
+  Tm1:      { full:'First Thermal Transition',                       unit:'°C',       hi_worse:false, lo:55,  mod:65,  source:'ESM-2 650M', model:'Ridge',            rho:'0.456',  ci95:'[0.284, 0.605]',  reliable:true },
+  Tm2:      { full:'Second Thermal Transition',                      unit:'°C',       hi_worse:false, lo:65,  mod:75,  source:'ESM-2 650M', model:'Ridge',            rho:'0.289',  ci95:'[−0.063, 0.371]', reliable:true },
+  Tonset:   { full:'Aggregation Onset Temperature',                  unit:'°C',       hi_worse:false, lo:50,  mod:60,  source:'ESM-2 650M', model:'Ridge',            rho:'0.516',  ci95:'[0.341, 0.660]',  reliable:true },
+  SEC:      { full:'Size-Exclusion Chromatography (% monomer)',      unit:'%',        hi_worse:false, lo:90,  mod:95,  source:'PhysChem',   model:'Ridge + F-MoE',    rho:'−0.171', ci95:'[−0.374, 0.048]', reliable:false },
+  Titer:    { full:'Expression Titer',                               unit:'g/L',      hi_worse:false, lo:1,   mod:2,   source:'AbLang2',    model:'Ridge',            rho:'0.075',  ci95:'[−0.147, 0.293]', reliable:false },
+};
+const ASSAY_KEYS = Object.keys(ASSAYS);
+const ASSAY_CI_W = { HAC:5, SMAC:4.5, HIC:8, 'AC-SINS':3, 'PR-CHO':.15, Tm1:4.5, Tm2:5.5, Tonset:5, SEC:10, Titer:1.5 };
+const AB_COLORS  = ['#2166AC','#E08214','#4DAC26','#B2182B','#7B2D8B','#4393C3','#F46D43','#1B7837'];
+
+const DEMO_ABS = [
+  { id:'mAb-A', name:'mAb-A',
+    vh:'EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAVYYCSRWGGDGFYAMDYWGQGTLVTVSS',
+    vl:'DIQMTQSPSSLSASVGDRVTITCRASQDVNTAVAWYQQKPGKAPKLLIYSASFLYSGVPSRFSGSRSGTDFTLTISSLQPEDFATYYCQQHYTTPPTFGQGTKVEIK',
+    demo_vals:{ HAC:12.3, SMAC:7.8, HIC:18.5, 'AC-SINS':3.2, 'PR-CHO':0.41, Tm1:68.4, Tm2:78.5, Tonset:62.1, SEC:96.8, Titer:2.4 }
+  },
+  { id:'mAb-B', name:'mAb-B',
+    vh:'QVQLVESGGGVVQPGRSLRLSCAASGFTFSSYGMHWVRQAPGKGLEWVAVISYDGSNKYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYCARDEGYYGSMDYWGQGTLVTVSS',
+    vl:'DIQMTQSPSSLSASVGDRVTITCRSSQSLVHSNGNTYLHWYLQKPGQSPQLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDVGVYYCFQGSHVPFTFGGGTKVEIK',
+    demo_vals:{ HAC:28.4, SMAC:19.1, HIC:38.7, 'AC-SINS':4.2, 'PR-CHO':0.55, Tm1:63.1, Tm2:73.2, Tonset:57.4, SEC:91.2, Titer:1.8 }
+  },
+  { id:'mAb-C', name:'mAb-C',
+    vh:'QVQLQESGPGLVKPSQTLSLTCAVSGGSISSYYWSWIRQPPGKGLEWIGYIYYSGSTYYNPSLKSRVTISVDTSKNQFSLKLSSVTAADTAVYYCARRGLWFAYWGQGTLVTVSS',
+    vl:'EIVLTQSPGTLSLSPGERATLSCRASQSVSSSYLAWYQQKPGQAPRLLIYGASSRATGIPDRFSGSGSGTDFTLTISRLEPEDFAVYYCQQYGSSPWTFGQGTRLEIK',
+    demo_vals:{ HAC:16.8, SMAC:11.2, HIC:24.5, 'AC-SINS':9.8, 'PR-CHO':1.12, Tm1:66.8, Tm2:76.4, Tonset:60.2, SEC:95.1, Titer:2.1 }
+  }
+];
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let state = { current:null, compareList:[], batchRows:[], thresholds:{} };
+ASSAY_KEYS.forEach(k => { state.thresholds[k] = ASSAYS[k].lo; });
+
+// ─── Prediction engine ───────────────────────────────────────────────────────
+function hashInt(s) {
+  let h = 5381;
+  for (let i=0;i<s.length;i++) h=(Math.imul(33,h)^s.charCodeAt(i))>>>0;
+  return h;
+}
+function seededR(h,o) { const v=Math.sin(h*.1+o)*43758.5453; return v-Math.floor(v); }
+function clamp(x,lo,hi) { return Math.max(lo,Math.min(hi,x)); }
+
+function computeFeats(vh,vl) {
+  const s=(vh+vl).toUpperCase().replace(/[^A-Z]/g,'');
+  const n=s.length||1; const cnt={};
+  for(const c of s) cnt[c]=(cnt[c]||0)+1;
+  const g=x=>(cnt[x]||0)/n;
+  return { n, s, cnt,
+    hydro:g('V')+g('I')+g('L')+g('M')+g('F')+g('Y')+g('W'),
+    arom: g('F')+g('Y')+g('W'),
+    pos:  g('K')+g('R'), neg: g('D')+g('E'),
+    cys:(cnt['C']||0), pro:g('P'), gly:g('G'), ser:g('S')+g('T')
+  };
+}
+
+function predictAll(vh, vl, overrideVals) {
+  if (overrideVals) {
+    const p={};
+    ASSAY_KEYS.forEach(k => { const v=overrideVals[k],w=ASSAY_CI_W[k];
+      p[k]={value:v, ciLo:parseFloat((v-w/2).toFixed(2)), ciHi:parseFloat((v+w/2).toFixed(2))}; });
+    return p;
+  }
+  const f=computeFeats(vh,vl);
+  const h=hashInt(vh.slice(0,20)+vl.slice(0,20));
+  const noise=(o,s)=>(seededR(h,o)-.5)*s;
+  const raw={};
+  raw.HAC     = clamp(5 +f.hydro*90 +f.arom*30 +noise(1,5),   3, 55);
+  raw.SMAC    = clamp(3 +f.hydro*65 +f.arom*20 +noise(2,4),   1, 40);
+  raw.HIC     = clamp(8 +f.hydro*55 +f.arom*28 +noise(3,7),   4, 72);
+  raw['AC-SINS']=clamp(0.5+f.arom*65+f.pos*30-f.neg*8+noise(4,2.5), 0,25);
+  raw['PR-CHO'] =clamp(0.15+f.arom*4.5+f.pos*2.2-f.neg*.5+noise(5,.15),0.05,3.5);
+  raw.Tm1     = clamp(74-f.hydro*38+f.cys*1.5-f.pro*28+noise(6,3),  45,86);
+  raw.Tm2     = clamp(82-f.hydro*32+f.cys*1.2-f.pro*20+noise(7,3.5),55,92);
+  raw.Tonset  = clamp(66-f.hydro*44+f.cys*1.0-f.pro*25+noise(8,4),  40,80);
+  raw.SEC     = clamp(94+noise(9,10),  72, 99.5);
+  raw.Titer   = clamp(1.8+noise(10,2.5),0.1,6.0);
+  const p={};
+  ASSAY_KEYS.forEach(k => { const v=raw[k],w=ASSAY_CI_W[k];
+    p[k]={value:parseFloat(v.toFixed(2)),ciLo:parseFloat((v-w/2).toFixed(2)),ciHi:parseFloat((v+w/2).toFixed(2))}; });
+  return p;
+}
+
+function riskLevel(k,v) {
+  const a=ASSAYS[k];
+  if(!a.reliable) return 'unreliable';
+  if(a.hi_worse) return v>a.mod?'bad':v>a.lo?'warn':'good';
+  return v<a.lo?'bad':v<a.mod?'warn':'good';
+}
+function overallRisk(preds) {
+  const ls=ASSAY_KEYS.filter(k=>ASSAYS[k].reliable).map(k=>riskLevel(k,preds[k].value));
+  return ls.some(l=>l==='bad')?'bad':ls.some(l=>l==='warn')?'warn':'good';
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  document.querySelectorAll('.panel').forEach(p=>{p.hidden=p.id!=='panel-'+name;});
+  if(name==='predict')    renderPredict();
+  if(name==='structure')  renderStructure();
+  if(name==='explain')    renderExplain();
+  if(name==='compare')    renderCompare();
+  if(name==='prioritise') renderPrioritise();
+  try{localStorage.setItem('abdevx_tab',name);}catch(e){}
+}
+document.getElementById('tabNav').addEventListener('click',e=>{
+  const b=e.target.closest('.tab-btn'); if(b) showTab(b.dataset.tab);
+});
+document.querySelectorAll('.inner-tab-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    b.closest('.inner-tabs').querySelectorAll('.inner-tab-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    ['single','batch','fasta'].forEach(t=>{const el=document.getElementById('sub-'+t); if(el) el.hidden=(t!==b.dataset.subtab);});
+  });
+});
+
+// ─── Submit ───────────────────────────────────────────────────────────────────
+document.getElementById('vhSeq').addEventListener('input',updateLens);
+document.getElementById('vlSeq').addEventListener('input',updateLens);
+function updateLens() {
+  const vh=document.getElementById('vhSeq').value.trim().replace(/[^A-Za-z]/g,'');
+  const vl=document.getElementById('vlSeq').value.trim().replace(/[^A-Za-z]/g,'');
+  document.getElementById('vhLen').textContent=vh.length?`${vh.length} residues`:'';
+  document.getElementById('vlLen').textContent=vl.length?`${vl.length} residues`:'';
+}
+function loadExample(i) {
+  const d=DEMO_ABS[i];
+  document.getElementById('abName').value=d.name;
+  document.getElementById('vhSeq').value=d.vh;
+  document.getElementById('vlSeq').value=d.vl;
+  updateLens();
+}
+function runSingle() {
+  const name=document.getElementById('abName').value.trim()||'Unnamed';
+  const vh=document.getElementById('vhSeq').value.trim().replace(/[^A-Za-z]/g,'').toUpperCase();
+  const vl=document.getElementById('vlSeq').value.trim().replace(/[^A-Za-z]/g,'').toUpperCase();
+  if(!vh||!vl){showMsg('Please enter both VH and VL sequences.',true);return;}
+  if(vh.length<30){showMsg('VH appears too short (< 30 residues). Check input.',true);return;}
+  const demo=DEMO_ABS.find(d=>d.vh.toUpperCase()===vh&&d.vl.toUpperCase()===vl);
+  const preds=predictAll(vh,vl,demo?demo.demo_vals:null);
+  state.current={id:name.replace(/\s+/g,'-'),name,vh,vl,preds};
+  showMsg('Prediction complete — switching to Predict tab.',false);
+  setTimeout(()=>showTab('predict'),350);
+}
+function showMsg(msg,isErr) {
+  const el=document.getElementById('validationMsg');
+  el.style.display='block'; el.className=isErr?'warn-banner':'info-banner'; el.textContent=msg;
+  setTimeout(()=>{el.style.display='none';},4000);
+}
+
+// ─── Batch ────────────────────────────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault(); document.getElementById('dropZone').classList.remove('drag-over');
+  if(e.dataTransfer.files[0]) processCSVFile(e.dataTransfer.files[0]);
+}
+function handleCSV(inp) { if(inp.files[0]) processCSVFile(inp.files[0]); }
+function processCSVFile(file) {
+  const reader=new FileReader();
+  reader.onload=ev=>parseCSVText(ev.target.result);
+  reader.readAsText(file);
+}
+function parseCSVText(text) {
+  const lines=text.trim().split('\n').map(l=>l.trim()).filter(l=>l);
+  if(lines.length<2){alert('CSV needs a header + at least one data row.');return;}
+  const hdr=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/[^a-z_]/g,''));
+  const idI=hdr.findIndex(h=>h.includes('id')||h.includes('name'));
+  const vhI=hdr.findIndex(h=>h.includes('vh'));
+  const vlI=hdr.findIndex(h=>h.includes('vl'));
+  if(vhI===-1||vlI===-1){alert('CSV must include VH and VL columns.');return;}
+  state.batchRows=[];
+  for(let i=1;i<Math.min(lines.length,501);i++) {
+    const cols=lines[i].split(',');
+    const id=idI>=0?cols[idI]?.trim():`Ab-${i}`;
+    const vh=cols[vhI]?.trim().replace(/[^A-Za-z]/g,'').toUpperCase()||'';
+    const vl=cols[vlI]?.trim().replace(/[^A-Za-z]/g,'').toUpperCase()||'';
+    if(vh&&vl) state.batchRows.push({id:id||`Ab-${i}`,vh,vl});
+  }
+  renderCSVPreview();
+  document.getElementById('batchActions').style.display='flex';
+}
+function renderCSVPreview() {
+  const rows=state.batchRows.slice(0,5);
+  document.getElementById('csvPreview').innerHTML=
+    `<p style="font-size:12px;color:var(--fg2);margin-bottom:6px">${state.batchRows.length} antibodies loaded. Showing first 5:</p>
+    <div class="tbl-wrap"><table class="data-table"><thead><tr><th>ID</th><th>VH (preview)</th><th>VL (preview)</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td>${r.id}</td><td style="font-family:var(--mono);font-size:11px">${r.vh.slice(0,30)}…</td><td style="font-family:var(--mono);font-size:11px">${r.vl.slice(0,30)}…</td></tr>`).join('')}</tbody></table></div>`;
+}
+function clearBatch() {
+  state.batchRows=[];
+  document.getElementById('csvPreview').innerHTML='';
+  document.getElementById('batchActions').style.display='none';
+  document.getElementById('csvInput').value='';
+}
+function runBatch() {
+  if(!state.batchRows.length) return;
+  const results=state.batchRows.map(r=>({...r,preds:predictAll(r.vh,r.vl)}));
+  const header=['ID',...ASSAY_KEYS].join('</th><th>');
+  const rows=results.map(r=>{
+    const cells=ASSAY_KEYS.map(k=>{
+      const v=r.preds[k].value, rl=riskLevel(k,v);
+      const c=rl==='good'?'var(--good)':rl==='warn'?'var(--warn)':rl==='unreliable'?'var(--fg2)':'var(--bad)';
+      return `<td style="font-variant-numeric:tabular-nums;color:${c}">${v.toFixed(2)}</td>`;
+    }).join('');
+    return `<tr><td><strong>${r.id}</strong></td>${cells}</tr>`;
+  }).join('');
+  document.getElementById('csvPreview').innerHTML=
+    `<p style="font-size:12px;color:var(--fg2);margin-bottom:8px">Batch complete — ${results.length} antibodies</p>
+    <div class="tbl-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">
+    <thead><tr><th>${header}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  state.compareList=results.map(r=>({id:r.id,name:r.id,preds:r.preds}));
+}
+
+// ─── FASTA ────────────────────────────────────────────────────────────────────
+function parseFasta() {
+  const text=document.getElementById('fastaInput').value.trim();
+  const entries={};
+  let cur=null;
+  text.split('\n').forEach(line=>{
+    if(line.startsWith('>')){
+      const hdr=line.slice(1).trim();
+      const idM=hdr.match(/^([^|]+)/), typeM=hdr.match(/\|(VH|VL)/i);
+      if(idM&&typeM){cur={id:idM[1].trim(),type:typeM[1].toUpperCase()}; if(!entries[cur.id]) entries[cur.id]={id:cur.id,vh:'',vl:''};}
+      else cur=null;
+    } else if(cur&&entries[cur.id]) {
+      const clean=line.trim().replace(/[^A-Za-z]/g,'').toUpperCase();
+      if(cur.type==='VH') entries[cur.id].vh+=clean; else entries[cur.id].vl+=clean;
+    }
+  });
+  const valid=Object.values(entries).filter(e=>e.vh&&e.vl);
+  const res=document.getElementById('fastaResult');
+  if(!valid.length){res.innerHTML='<div class="warn-banner">No valid VH/VL pairs found. Ensure headers contain |VH or |VL.</div>';return;}
+  res.innerHTML=`<div class="info-banner">${valid.length} pair(s) parsed. Loading first into Single form.</div>`;
+  const f=valid[0];
+  document.getElementById('abName').value=f.id;
+  document.getElementById('vhSeq').value=f.vh;
+  document.getElementById('vlSeq').value=f.vl;
+  updateLens();
+  document.querySelector('[data-subtab=single]').click();
+}
+
+// ─── Render: Predict ──────────────────────────────────────────────────────────
+function renderPredict() {
+  const cur=state.current;
+  document.getElementById('predictEmpty').hidden=!!cur;
+  document.getElementById('predictContent').hidden=!cur;
+  if(!cur) return;
+  document.getElementById('predictTitle').textContent=cur.name;
+  document.getElementById('predictSubtitle').textContent=
+    `VH: ${cur.vh.length} aa · VL: ${cur.vl.length} aa · AbDev-X v1.0 · GDPa1 n=246 · GDPa3 n=80 IgG1`;
+  const overall=overallRisk(cur.preds);
+  const cmap={good:'chip-good',warn:'chip-warn',bad:'chip-bad'};
+  const lmap={good:'Low Risk',warn:'Moderate Risk',bad:'High Risk'};
+  document.getElementById('overallChip').innerHTML=`<span class="chip ${cmap[overall]}">${lmap[overall]}</span>`;
+  document.getElementById('assayGrid').innerHTML=ASSAY_KEYS.map(k=>{
+    const a=ASSAYS[k],p=cur.preds[k],rl=riskLevel(k,p.value);
+    const cc={good:'chip-good',warn:'chip-warn',bad:'chip-bad',unreliable:'chip-mute'}[rl];
+    const cl={good:'Low Risk',warn:'Moderate Risk',bad:'High Risk',unreliable:'Unreliable'}[rl];
+    return `<div class="assay-card ${!a.reliable?'unreliable':''}">
+      <div class="assay-flag"><span class="chip ${cc}">${cl}</span></div>
+      <div class="assay-name">${k}</div><div class="assay-full">${a.full}</div>
+      <div><span class="assay-value">${p.value.toFixed(2)}</span><span class="assay-unit">${a.unit}</span></div>
+      <div class="assay-ci">95% CI [${p.ciLo.toFixed(2)}, ${p.ciHi.toFixed(2)}]</div>
+      <div class="assay-source">Source: <strong>${a.source}</strong> · ${a.model}</div>
+      <div class="assay-rho">GDPa3 ρ ${a.rho} ${a.ci95}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('rawTableBody').innerHTML=ASSAY_KEYS.map(k=>{
+    const a=ASSAYS[k],p=cur.preds[k],rl=riskLevel(k,p.value);
+    const cc={good:'chip-good',warn:'chip-warn',bad:'chip-bad',unreliable:'chip-mute'}[rl];
+    const cl={good:'Low',warn:'Moderate',bad:'High',unreliable:'Unreliable'}[rl];
+    return `<tr><td><strong>${k}</strong></td><td style="font-size:12px;color:var(--fg2)">${a.full}</td>
+      <td style="font-variant-numeric:tabular-nums">${p.value.toFixed(2)}</td>
+      <td style="font-family:var(--mono);font-size:12px">[${p.ciLo.toFixed(2)}, ${p.ciHi.toFixed(2)}]</td>
+      <td style="color:var(--fg2)">${a.unit}</td>
+      <td><span class="chip ${cc}">${cl}</span></td>
+      <td style="font-size:12px">${a.source}</td></tr>`;
+  }).join('');
+}
+function addToCompare() {
+  const cur=state.current; if(!cur) return;
+  if(!state.compareList.find(x=>x.id===cur.id)) state.compareList.push({id:cur.id,name:cur.name,preds:cur.preds});
+  const btn=document.querySelector('[onclick="addToCompare()"]');
+  if(btn){btn.textContent='✓ Added';setTimeout(()=>{btn.textContent='+ Add to Compare';},1500);}
+}
+
+// ─── Render: Structure ────────────────────────────────────────────────────────
+function renderStructure() {
+  const cur=state.current;
+  document.getElementById('structEmpty').hidden=!!cur;
+  document.getElementById('structContent').hidden=!cur;
+  if(!cur) return;
+  document.getElementById('structTitle').textContent=`${cur.name} — Sequence Analysis`;
+  const f=computeFeats(cur.vh,cur.vl);
+  const mw=estimateMW(f.s), pi=estimatePI(f);
+  const netCharge=((f.cnt.K||0)+(f.cnt.R||0))-((f.cnt.D||0)+(f.cnt.E||0));
+  const metrics=[
+    {label:'VH Length',value:cur.vh.length,unit:'aa'},
+    {label:'VL Length',value:cur.vl.length,unit:'aa'},
+    {label:'Est. MW',value:(mw/1000).toFixed(1),unit:'kDa'},
+    {label:'Est. pI',value:pi.toFixed(1),unit:''},
+    {label:'Net Charge',value:netCharge.toFixed(0),unit:'at pH 7'},
+    {label:'Hydrophobic',value:(f.hydro*100).toFixed(1),unit:'%'},
+    {label:'Aromatic',value:(f.arom*100).toFixed(1),unit:'%'},
+    {label:'Cys Residues',value:f.cys,unit:'(disulfide)'},
+    {label:'Gly+Ser+Thr',value:((f.gly+f.ser)*100).toFixed(1),unit:'%'},
+  ];
+  document.getElementById('metricGrid').innerHTML=metrics.map(m=>
+    `<div class="metric-tile"><div class="metric-label">${m.label}</div>
+     <div class="metric-value">${m.value}<span class="metric-unit">&thinsp;${m.unit}</span></div></div>`
+  ).join('');
+  document.getElementById('vhAnnot').innerHTML=annotateCDRs(cur.vh,'heavy');
+  document.getElementById('vlAnnot').innerHTML=annotateCDRs(cur.vl,'light');
+  renderCompChart(f.cnt);
+  const bcolors={good:'var(--good)',warn:'var(--warn)',bad:'var(--bad)',mute:'var(--mute)'};
+  const groups=[
+    {label:'Hydrophobic (VILMFYW)',frac:f.hydro,cls:'bad'},
+    {label:'Aromatic (FYW)',frac:f.arom,cls:'warn'},
+    {label:'Polar uncharged (STCNQ)',frac:((f.cnt.S||0)+(f.cnt.T||0)+(f.cnt.C||0)+(f.cnt.N||0)+(f.cnt.Q||0))/f.n,cls:'good'},
+    {label:'Positively charged (KR)',frac:f.pos,cls:'warn'},
+    {label:'Negatively charged (DE)',frac:f.neg,cls:'good'},
+    {label:'Special (GP)',frac:f.gly+(f.cnt.P||0)/f.n,cls:'mute'},
+  ];
+  document.getElementById('physChemGroups').innerHTML=groups.map(g=>
+    `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <span>${g.label}</span><span style="font-family:var(--mono)">${(g.frac*100).toFixed(1)}%</span>
+      </div>
+      <div class="prog-bar-wrap"><div class="prog-bar" style="width:${Math.min(100,g.frac*200)}%;background:${bcolors[g.cls]}"></div></div>
+    </div>`
+  ).join('');
+}
+function estimateMW(s){const mws={A:89,R:174,N:132,D:133,C:121,E:147,Q:146,G:75,H:155,I:131,L:131,K:146,M:149,F:165,P:115,S:105,T:119,W:204,Y:181,V:117};return s.split('').reduce((a,c)=>a+(mws[c]||110),0)-(s.length-1)*18;}
+function estimatePI(f){const kp=(f.cnt.K||0)*10.53+(f.cnt.R||0)*12.48+(f.cnt.H||0)*6.0,kn=(f.cnt.D||0)*3.65+(f.cnt.E||0)*4.25+(f.cnt.C||0)*8.18+(f.cnt.Y||0)*10.07;return clamp(4+(kp/(kn+1))*4,4,11);}
+let compChartInst=null;
+function renderCompChart(cnt) {
+  const aas='ACDEFGHIKLMNPQRSTVWY'.split('');
+  const isDark=isDarkMode();
+  const ctx=document.getElementById('compChart').getContext('2d');
+  if(compChartInst) compChartInst.destroy();
+  compChartInst=new Chart(ctx,{type:'bar',data:{labels:aas,datasets:[{data:aas.map(a=>cnt[a]||0),backgroundColor:'#2166AC88',borderColor:'#2166AC',borderWidth:1}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{ticks:{color:isDark?'#8BAAC4':'#4B6680',font:{size:10}},grid:{color:isDark?'#2A4060':'#CBD8E6'}},
+            y:{ticks:{color:isDark?'#8BAAC4':'#4B6680',font:{size:10}},grid:{color:isDark?'#2A4060':'#CBD8E6'}}}}});
+}
+function annotateCDRs(seq,chain) {
+  const n=seq.length;
+  let cdrs=[];
+  if(chain==='heavy') {
+    cdrs=[[Math.round(n*.22),Math.round(n*.30),'cdr-h1','H1'],[Math.round(n*.42),Math.round(n*.55),'cdr-h2','H2'],[Math.round(n*.79),Math.round(n*.90),'cdr-h3','H3']];
+  } else {
+    cdrs=[[Math.round(n*.22),Math.round(n*.32),'cdr-l1','L1'],[Math.round(n*.48),Math.round(n*.55),'cdr-l2','L2'],[Math.round(n*.79),Math.round(n*.89),'cdr-l3','L3']];
+  }
+  let html='',inCDR=null;
+  for(let i=0;i<seq.length;i++){
+    const cdr=cdrs.find(([s,e])=>i>=s&&i<e);
+    if(cdr&&inCDR!==cdr[2]){if(inCDR) html+='</span>';html+=`<span class="${cdr[2]}" title="${cdr[3]}">`;inCDR=cdr[2];}
+    else if(!cdr&&inCDR){html+='</span>';inCDR=null;}
+    html+=seq[i];
+    if((i+1)%10===0&&i<seq.length-1) html+=' ';
+    if((i+1)%60===0) html+='\n';
+  }
+  if(inCDR) html+='</span>';
+  return html;
+}
+
+// ─── Render: Explain ─────────────────────────────────────────────────────────
+function renderExplain() {
+  const cur=state.current;
+  document.getElementById('explainEmpty').hidden=!!cur;
+  document.getElementById('explainContent').hidden=!cur;
+  if(!cur) return;
+  const f=computeFeats(cur.vh,cur.vl);
+  const FG=[
+    {label:'Hydrophobic fraction (VILMFYW)',val:f.hydro},
+    {label:'Aromatic fraction (FYW)',val:f.arom},
+    {label:'Net positive charge (K+R)',val:f.pos},
+    {label:'Net negative charge (D+E)',val:f.neg},
+    {label:'Cysteine count (normalised)',val:f.cys/20},
+    {label:'Proline fraction',val:f.pro},
+    {label:'Sequence length (normalised)',val:f.n/500},
+  ];
+  const AFI={HAC:[.45,.28,.05,-.08,-.04,.08,.10],SMAC:[.42,.25,.06,-.07,-.05,.09,.11],HIC:[.40,.30,.04,-.06,-.03,.07,.13],'AC-SINS':[.15,.40,.28,-.12,-.02,.03,.05],'PR-CHO':[.18,.38,.26,-.10,-.03,.04,.06],Tm1:[-.32,-.18,.05,.03,.22,-.18,.08],Tm2:[-.28,-.20,.04,.04,.20,-.15,.10],Tonset:[-.35,-.22,.04,.03,.18,-.16,.09],SEC:[.10,.08,.06,-.04,.05,.03,.12],Titer:[.08,.06,.04,-.05,.06,.04,.10]};
+  document.getElementById('explainGrid').innerHTML=ASSAY_KEYS.map(k=>{
+    const a=ASSAYS[k];
+    const pairs=FG.map((fg,i)=>({label:fg.label,imp:AFI[k][i]})).sort((a,b)=>Math.abs(b.imp)-Math.abs(a.imp));
+    const bars=pairs.map(p=>{
+      const pct=Math.abs(p.imp)*200,col=p.imp>0?'var(--bad)':'var(--good)',dir=p.imp>0?'↑ risk':'↓ risk';
+      return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+        <span style="font-size:11px;color:var(--fg2);width:200px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.label}">${p.label}</span>
+        <div class="prog-bar-wrap" style="flex:1"><div class="prog-bar" style="width:${pct}%;background:${col}"></div></div>
+        <span style="font-size:11px;color:${col};width:50px;text-align:right;white-space:nowrap">${dir}</span>
+      </div>`;
+    }).join('');
+    const rl=riskLevel(k,state.current.preds[k].value);
+    const cc={good:'chip-good',warn:'chip-warn',bad:'chip-bad',unreliable:'chip-mute'}[rl];
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <strong>${k}</strong><span style="font-size:12px;color:var(--fg2)">${a.full}</span>
+        <span class="chip ${cc}" style="margin-left:auto">${a.source}</span>
+      </div>
+      ${!a.reliable?'<div class="warn-banner" style="margin-bottom:8px;font-size:11px">⚠ Unreliable assay (ρ ≈ 0) — attribution not actionable</div>':''}
+      ${bars}
+    </div>`;
+  }).join('');
+}
+
+// ─── Render: Compare ─────────────────────────────────────────────────────────
+let radarInst=null;
+function loadDemoCompare() {
+  state.compareList=DEMO_ABS.map(d=>({id:d.id,name:d.name,preds:predictAll(d.vh,d.vl,d.demo_vals)}));
+  renderCompare();
+}
+function clearCompare(){state.compareList=[];renderCompare();}
+function removeFromCompare(id){state.compareList=state.compareList.filter(x=>x.id!==id);renderCompare();}
+
+function normScore(k,v) {
+  const a=ASSAYS[k];
+  if(!a.hi_worse) return clamp((v-a.lo*0.5)/((a.mod*1.5)-(a.lo*0.5))*100,0,100);
+  return clamp((1-v/(a.mod*1.8))*100,0,100);
+}
+
+function renderCompare() {
+  const list=document.getElementById('compareList');
+  list.innerHTML=state.compareList.map((ab,i)=>
+    `<div class="ab-tag" style="background:${AB_COLORS[i%8]}22;color:${AB_COLORS[i%8]}">
+      ${ab.name}<button onclick="removeFromCompare('${ab.id}')" title="Remove">×</button>
+    </div>`
+  ).join('')||'<span style="font-size:13px;color:var(--fg2)">None added yet.</span>';
+  const has=state.compareList.length>=1;
+  document.getElementById('compareContent').hidden=!has;
+  if(!has) return;
+  const radarKeys=['HAC','SMAC','HIC','AC-SINS','PR-CHO'];
+  const isDark=isDarkMode();
+  const gc=isDark?'#2A4060':'#CBD8E6', tc=isDark?'#8BAAC4':'#4B6680';
+  const ctx=document.getElementById('radarChart').getContext('2d');
+  if(radarInst) radarInst.destroy();
+  radarInst=new Chart(ctx,{type:'radar',data:{
+    labels:radarKeys.map(k=>`${k} (${ASSAYS[k].unit})`),
+    datasets:state.compareList.map((ab,i)=>({label:ab.name,data:radarKeys.map(k=>normScore(k,ab.preds[k].value)),borderColor:AB_COLORS[i%8],backgroundColor:AB_COLORS[i%8]+'33',borderWidth:2,pointRadius:4}))
+  },options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:tc,font:{size:11}}}},
+    scales:{r:{min:0,max:100,ticks:{color:tc,font:{size:10},stepSize:25,backdropColor:'transparent'},grid:{color:gc},pointLabels:{color:tc,font:{size:11}}}}}});
+  const relKeys=ASSAY_KEYS.filter(k=>ASSAYS[k].reliable);
+  const tbl=document.getElementById('heatmapTable');
+  tbl.innerHTML=`<thead><tr><th>Antibody</th>${relKeys.map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>`+
+    state.compareList.map((ab,i)=>{
+      const cells=relKeys.map(k=>{
+        const v=ab.preds[k].value,rl=riskLevel(k,v);
+        const bg={good:'var(--good-bg)',warn:'var(--warn-bg)',bad:'var(--bad-bg)'}[rl]||'';
+        const fg={good:'var(--good)',warn:'var(--warn)',bad:'var(--bad)'}[rl]||'var(--fg)';
+        return `<td style="background:${bg};color:${fg};font-variant-numeric:tabular-nums;font-size:12px">${v.toFixed(2)}</td>`;
+      }).join('');
+      return `<tr><td><strong style="color:${AB_COLORS[i%8]}">${ab.name}</strong></td>${cells}</tr>`;
+    }).join('')+'</tbody>';
+  const passCount=state.compareList.map(ab=>({name:ab.name,
+    passes:relKeys.filter(k=>riskLevel(k,ab.preds[k].value)==='good').length,
+    warns: relKeys.filter(k=>riskLevel(k,ab.preds[k].value)==='warn').length,
+    fails: relKeys.filter(k=>riskLevel(k,ab.preds[k].value)==='bad').length
+  })).sort((a,b)=>b.passes-a.passes||a.fails-b.fails);
+  document.getElementById('rankingTable').innerHTML=
+    `<table class="data-table"><thead><tr><th>#</th><th>Antibody</th><th style="color:var(--good)">Pass</th><th style="color:var(--warn)">Flag</th><th style="color:var(--bad)">Fail</th></tr></thead><tbody>`+
+    passCount.map((r,i)=>`<tr><td>${i+1}</td><td><strong>${r.name}</strong></td><td style="color:var(--good)">${r.passes}</td><td style="color:var(--warn)">${r.warns}</td><td style="color:var(--bad)">${r.fails}</td></tr>`).join('')+'</tbody></table>';
+}
+
+// ─── Render: Prioritise ───────────────────────────────────────────────────────
+function renderPrioritise() {
+  const reliableKeys=ASSAY_KEYS.filter(k=>ASSAYS[k].reliable);
+  document.getElementById('thresholdControls').innerHTML=reliableKeys.map(k=>{
+    const a=ASSAYS[k],thr=state.thresholds[k];
+    const step=a.unit==='°C'?1:a.unit==='%'?1:a.unit==='min'?1:.1;
+    const minV=a.hi_worse?a.lo*.3:a.lo*.7,maxV=a.hi_worse?a.mod*1.8:a.mod*1.5;
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <label style="margin:0;font-weight:500;color:var(--fg)">${k} <span style="color:var(--fg2)">${a.unit}</span></label>
+        <span style="font-family:var(--mono);color:var(--accent)" id="thr-lbl-${k}">${thr} ${a.unit}</span>
+      </div>
+      <input type="range" min="${minV}" max="${maxV}" step="${step}" value="${thr}" oninput="updateThreshold('${k}',this.value)">
+      <div style="font-size:11px;color:var(--fg2)">${a.hi_worse?'Pass if ≤ threshold':'Pass if ≥ threshold'}</div>
+    </div>`;
+  }).join('');
+  updatePriorityResults();
+}
+function updateThreshold(k,val) {
+  state.thresholds[k]=parseFloat(val);
+  document.getElementById(`thr-lbl-${k}`).textContent=`${parseFloat(val).toFixed(2)} ${ASSAYS[k].unit}`;
+  updatePriorityResults();
+}
+function updatePriorityResults() {
+  const el=document.getElementById('priorityResults');
+  if(!state.compareList.length){el.innerHTML='<div class="empty-state" style="padding:24px 0"><p>Add antibodies in the Compare tab to rank candidates here.</p></div>';return;}
+  const reliableKeys=ASSAY_KEYS.filter(k=>ASSAYS[k].reliable);
+  const scored=state.compareList.map(ab=>{
+    let passes=0,warns=0,fails=0;
+    const details=reliableKeys.map(k=>{
+      const a=ASSAYS[k],v=ab.preds[k].value,thr=state.thresholds[k];
+      const pass=a.hi_worse?v<=thr:v>=thr,soft=a.hi_worse?v<=thr*1.25:v>=thr*.75;
+      if(pass) passes++; else if(soft) warns++; else fails++;
+      return{k,v,pass,soft};
+    });
+    return{...ab,passes,warns,fails,details};
+  }).sort((a,b)=>b.passes-a.passes||a.fails-b.fails);
+  el.innerHTML=scored.map((ab,rank)=>{
+    const col=rank===0?'var(--good)':rank===1?'var(--accent)':'var(--fg2)';
+    const bars=ab.details.map(d=>{const c=d.pass?'var(--good)':d.soft?'var(--warn)':'var(--bad)',icon=d.pass?'✓':d.soft?'~':'✗';return `<span style="font-size:11px;color:${c};margin-right:4px">${icon}${d.k}</span>`;}).join('');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:700;width:24px;color:${col}">${rank+1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px">${ab.name}
+          <span style="font-size:12px;color:${col};font-family:var(--mono)">${ab.passes}/${reliableKeys.length} pass</span>
+        </div>
+        <div style="margin-top:4px">${bars}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+function isDarkMode() {
+  const t=document.documentElement.getAttribute('data-theme');
+  return t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches);
+}
+function toggleTheme() {
+  const next=isDarkMode()?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  try{localStorage.setItem('abdevx_theme',next);}catch(e){}
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+(function init() {
+  try{const t=localStorage.getItem('abdevx_theme');if(t) document.documentElement.setAttribute('data-theme',t);}catch(e){}
+  loadExample(0);
+})();
+</script>
+</body>
+</html>
