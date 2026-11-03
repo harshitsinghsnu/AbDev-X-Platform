@@ -757,6 +757,11 @@ function runSingle() {
   // Use PDB from field, or fall back to demo's known PDB
   const resolvedPdb=pdbId||(demo?demo.pdb:null);
   state.current={id:name.replace(/\s+/g,'-'),name,vh,vl,preds,pdbId:resolvedPdb};
+  // Reset loaded PDB tracker so Structure tab reloads for this new antibody
+  loadedStructurePdbId = null;
+  viewer3d = null;
+  viewer3dExplain = null;
+  currentPDBData = null;
   showMsg('Prediction complete — switching to Predict tab.',false);
   setTimeout(()=>showTab('predict'),350);
 }
@@ -947,13 +952,13 @@ function renderStructure() {
     </div>`
   ).join('');
 
-  // Auto-load 3D structure if PDB ID is stored in state and viewer is empty
-  if (cur.pdbId && !viewer3d) {
+  // Auto-load 3D structure whenever pdbId changed (new antibody or first visit)
+  if (cur.pdbId && cur.pdbId !== loadedStructurePdbId) {
     const pdbInput = document.getElementById('pdbIdInput');
     if (pdbInput) pdbInput.value = cur.pdbId;
     const banner = document.getElementById('autoLoadBanner');
     if (banner) {
-      banner.textContent = `Auto-loading PDB ${cur.pdbId} for ${cur.name}…`;
+      banner.textContent = `Loading PDB ${cur.pdbId} for ${cur.name}…`;
       banner.style.display = 'block';
     }
     setTimeout(() => {
@@ -1189,6 +1194,7 @@ function toggleTheme() {
 // ─── 3D Structure Viewer ─────────────────────────────────────────────────────
 let viewer3d = null;
 let currentScheme = 'cdr';
+let loadedStructurePdbId = null; // track which PDB is currently in the viewer
 let pdbChainMap = {}; // chain letter → sorted array of resSeq numbers (sequential order)
 
 // Parse PDB ATOM records and build a map of chain → ordered unique resSeq values
@@ -1385,7 +1391,12 @@ function loadPDBFromRCSB(idOverride) {
   setViewerMsg(`Loading ${pdbId} from RCSB…`);
   fetch(`https://files.rcsb.org/download/${pdbId}.pdb`)
     .then(r => { if (!r.ok) throw new Error(`${pdbId} not found on RCSB`); return r.text(); })
-    .then(data => { initViewer3D(data); setViewerMsg(`Loaded ${pdbId}`, false); setTimeout(()=>setViewerMsg(''),2500); })
+    .then(data => {
+      loadedStructurePdbId = pdbId;
+      initViewer3D(data);
+      setViewerMsg(`Loaded ${pdbId}`, false);
+      setTimeout(()=>setViewerMsg(''),2500);
+    })
     .catch(e => setViewerMsg(`Error: ${e.message}`, true));
 }
 
