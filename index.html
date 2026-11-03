@@ -259,7 +259,6 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
 <header class="app-header">
   <div class="app-logo">AbDev-X<span>v1.0 · Antibody Developability</span></div>
-  <span class="header-badge">Research Demo</span>
   <div class="header-right">
     <button class="theme-btn" onclick="toggleTheme()">☀︎ / ☾</button>
   </div>
@@ -1397,23 +1396,29 @@ function loadPDBFile(inp) {
   reader.readAsText(file);
 }
 
-// ─── PDB → Fetch Sequences ───────────────────────────────────────────────────
+// ─── PDB → Fetch Sequences (parses SEQRES from PDB file — same CORS-enabled endpoint as 3D viewer) ────
+const AA3TO1 = {ALA:'A',ARG:'R',ASN:'N',ASP:'D',CYS:'C',GLN:'Q',GLU:'E',GLY:'G',
+  HIS:'H',ILE:'I',LEU:'L',LYS:'K',MET:'M',PHE:'F',PRO:'P',SER:'S',THR:'T',TRP:'W',TYR:'Y',VAL:'V'};
+
 async function fetchPDBSequences() {
   const pdbId = (document.getElementById('pdbIdSubmit')?.value || '').trim().toUpperCase();
   if (!pdbId || pdbId.length !== 4) { showMsg('Enter a valid 4-character PDB ID first (e.g. 1N8Z).', true); return; }
   const btn = document.getElementById('fetchSeqBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Fetching…'; }
   try {
-    const resp = await fetch(`https://www.rcsb.org/fasta/entry/${pdbId}/download`);
+    const resp = await fetch(`https://files.rcsb.org/download/${pdbId}.pdb`);
     if (!resp.ok) throw new Error(`PDB ${pdbId} not found on RCSB`);
-    const fasta = await resp.text();
-    const chains = parseFASTAChains(fasta);
+    const pdbText = await resp.text();
+    const chains = parsePDBSeqres(pdbText);
     const { vh, vl, heavyId, lightId } = identifyAntibodyChains(chains);
-    if (!vh) throw new Error('Could not identify antibody chains — enter VH/VL sequences manually');
+    if (!vh) throw new Error('Could not identify VH/VL chains — try entering sequences manually');
     document.getElementById('vhSeq').value = vh;
     if (vl) document.getElementById('vlSeq').value = vl;
     updateLens();
-    showMsg(`Sequences fetched from PDB ${pdbId} (chain ${heavyId} → VH, chain ${lightId} → VL). Variable domain trimmed — check length is correct.`, false);
+    // Also auto-fill pdbId so the 3D viewer can use it
+    const pdbInput = document.getElementById('pdbIdSubmit');
+    if (pdbInput) pdbInput.value = pdbId;
+    showMsg(`Sequences fetched from PDB ${pdbId} — chain ${heavyId} → VH (${vh.length} aa), chain ${lightId} → VL (${vl?.length||0} aa). Variable domains trimmed to J-segment.`, false);
   } catch(e) {
     showMsg(`Fetch failed: ${e.message}`, true);
   } finally {
@@ -1421,54 +1426,50 @@ async function fetchPDBSequences() {
   }
 }
 
-function parseFASTAChains(fasta) {
-  const chains = [];
-  let cur = null;
-  fasta.split('\n').forEach(line => {
-    line = line.trim();
-    if (line.startsWith('>')) {
-      if (cur) chains.push(cur);
-      // >PDBID_N|Chains X[auth Y]|description
-      const authMatch = line.match(/\[auth\s+([A-Za-z0-9])\]/);
-      const chainMatch = line.match(/Chains?\s+([A-Za-z0-9])/);
-      const chainId = (authMatch?.[1] || chainMatch?.[1] || '').toUpperCase();
-      cur = { header: line, chain: chainId, seq: '' };
-    } else if (cur) {
-      cur.seq += line.replace(/[^A-Za-z]/g, '');
-    }
+function parsePDBSeqres(pdbText) {
+  // Parse SEQRES records → chain → sequence string
+  const seqMap = {};
+  pdbText.split('\n').forEach(line => {
+    if (!line.startsWith('SEQRES')) return;
+    const chain = line[11];
+    const residues = line.substring(19).trim().split(/\s+/);
+    if (!seqMap[chain]) seqMap[chain] = '';
+    residues.forEach(r => { seqMap[chain] += AA3TO1[r] || 'X'; });
   });
-  if (cur) chains.push(cur);
-  return chains.filter(c => c.seq.length > 60);
+  // Convert to array, filter out very short chains (water, ligands)
+  return Object.entries(seqMap)
+    .map(([chain, seq]) => ({ chain, seq }))
+    .filter(c => c.seq.length >= 60 && !c.seq.includes('XXXXXXXXXX'));
 }
 
 function identifyAntibodyChains(chains) {
-  // Prefer auth chain IDs 'H' (heavy) and 'L' (light)
+  // Prefer chain IDs 'H' (heavy) and 'L' (light) — standard antibody Fab convention
   let heavy = chains.find(c => c.chain === 'H');
   let light  = chains.find(c => c.chain === 'L');
-  // Fallback: two longest chains in the 80–300 aa range
+  // Fallback: longest (heavy) and second-longest (light) chains
   if (!heavy || !light) {
-    const ab = chains.filter(c => c.seq.length >= 80 && c.seq.length <= 350)
-                     .sort((a,b) => b.seq.length - a.seq.length);
-    if (!heavy) heavy = ab[0];
-    if (!light)  light = ab.find(c => c !== heavy);
+    const sorted = chains.sort((a,b) => b.seq.length - a.seq.length);
+    if (!heavy) heavy = sorted[0];
+    if (!light)  light  = sorted.find(c => c !== heavy);
   }
   return {
     vh: heavy ? trimToVarDomain(heavy.seq, 'heavy') : null,
-    vl: light  ? trimToVarDomain(light.seq,  'light')  : null,
+    vl: light  ? trimToVarDomain(light.seq, 'light')  : null,
     heavyId: heavy?.chain || '?',
     lightId: light?.chain  || '?'
   };
 }
 
 function trimToVarDomain(seq, type) {
+  // Trim full Fab/IgG chain to variable domain using J-segment conserved motif
   if (type === 'heavy') {
-    // J-segment ends with "WGQG…TVTVSS" or "WGEG…TVTVSS"
-    const m = seq.match(/W[GD][QE]G[A-Z]{2,6}TVT/);
+    // VH J-region ends: "WGQG…TVTVSS" or "WGEG…TVTVSS"
+    const m = seq.match(/W[GD][QE]G[A-Z]{2,8}TVT/);
     if (m) return seq.substring(0, m.index + m[0].length);
     return seq.substring(0, 130);
   } else {
-    // Kappa/lambda J-segment: "FGQG" or "FGGG" or "FGRG"
-    const m = seq.match(/[FYL]G[QRG]G[A-Z]{2,6}[VLI][EK]I/);
+    // VL kappa/lambda J-region: "FGQG…VEI" or "FGGG…VEI"
+    const m = seq.match(/[FYL]G[QRG]G[A-Z]{2,8}[VLI][EK]I/);
     if (m) return seq.substring(0, m.index + m[0].length);
     return seq.substring(0, 115);
   }
