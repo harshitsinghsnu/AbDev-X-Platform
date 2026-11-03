@@ -6,6 +6,7 @@
 <title>AbDev-X Tool</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://unpkg.com/3dmol@2.0.3/build/3Dmol-min.js"></script>
 <style>
 /* Layout: sticky header + tab nav, single scrollable panel area */
 :root {
@@ -243,6 +244,15 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 .pareto-row:last-child { border-bottom: none; }
 .pareto-rank { font-size: 13px; font-weight: 700; width: 24px; color: var(--fg2); }
 .pareto-bars { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* 3D viewer */
+#viewer3d { width: 100%; background: var(--surface2); position: relative; }
+.scheme-btn { background: none; border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--fg2); padding: 4px 10px; cursor: pointer; font-size: 12px; font-family: var(--sans);
+  transition: background .15s, color .15s; }
+.scheme-btn:hover { background: var(--surface2); }
+.scheme-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.viewer-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 11px; align-items: center; }
+.legend-chip { padding: 2px 8px; border-radius: 12px; color: #fff; font-weight: 500; display: inline-block; }
 </style>
 </head>
 <body>
@@ -402,10 +412,50 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     <p><strong>No sequence loaded.</strong><br>Submit a sequence first.</p>
   </div>
   <div id="structContent" hidden>
-    <p class="section-title" id="structTitle">Sequence &amp; Physicochemical Analysis</p>
-    <p class="section-sub">CDR positions approximated by IMGT-based heuristics. Full structural predictions require ABodyBuilder3 (server-side; not computed in this demo).</p>
-    <div class="metric-grid" id="metricGrid"></div>
-    <div class="two-col" style="margin-top:16px">
+    <p class="section-title" id="structTitle">Sequence &amp; Structure Analysis</p>
+    <p class="section-sub">CDR positions use IMGT-based heuristics on sequence. 3D viewer loads any PDB structure from RCSB — upload your ABodyBuilder3-predicted structure for the best per-assay highlighting.</p>
+
+    <!-- 3D Structure Viewer -->
+    <div class="card">
+      <div class="card-title">3D Structure Viewer (3Dmol.js)</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <input type="text" id="pdbIdInput" placeholder="RCSB PDB ID (e.g. 1N8Z)" style="max-width:180px;padding:6px 10px">
+        <button class="btn btn-sm" onclick="loadPDBFromRCSB()">Load from RCSB</button>
+        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('pdbFileInput').click()">Upload .pdb</button>
+        <input type="file" id="pdbFileInput" accept=".pdb" style="display:none" onchange="loadPDBFile(this)">
+        <button class="btn btn-sm btn-ghost" onclick="loadPDBFromRCSB('1N8Z')">Demo: 1N8Z (Trastuzumab Fab)</button>
+      </div>
+      <div id="viewerMsg" style="font-size:12px;color:var(--fg2);margin-bottom:8px;display:none"></div>
+
+      <!-- Coloring scheme buttons -->
+      <div style="margin-bottom:10px">
+        <span style="font-size:12px;color:var(--fg2);font-weight:600;margin-right:6px">Highlight per assay:</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button class="scheme-btn active" id="scheme-cdr"   onclick="setColorScheme('cdr')">CDR regions</button>
+          <button class="scheme-btn" id="scheme-agg"          onclick="setColorScheme('agg')">HAC / SMAC / HIC (hydrophobic patches)</button>
+          <button class="scheme-btn" id="scheme-poly"         onclick="setColorScheme('poly')">AC-SINS / PR-CHO (polyreactivity)</button>
+          <button class="scheme-btn" id="scheme-tm"           onclick="setColorScheme('tm')">Tm1 / Tm2 / Tonset (thermal stability)</button>
+          <button class="scheme-btn" id="scheme-charge"       onclick="setColorScheme('charge')">Charge distribution</button>
+        </div>
+      </div>
+
+      <div id="viewer3d" style="height:400px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface2);">
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--fg2);font-size:13px;flex-direction:column;gap:8px">
+          <div style="font-size:28px">🧬</div>
+          <div>Load a PDB structure to begin. Use RCSB ID or upload your computed structure.</div>
+        </div>
+      </div>
+
+      <div class="viewer-legend" id="viewerLegend"></div>
+      <p style="font-size:11px;color:var(--mute);margin-top:8px">
+        For AbDev-X predictions, use ABodyBuilder3-predicted structures (chain IDs H/L). Kabat CDR positions are approximate for standard IgG1 Fab fragments.
+      </p>
+    </div>
+
+    <!-- Sequence metrics -->
+    <div class="metric-grid" id="metricGrid" style="margin-bottom:16px"></div>
+
+    <div class="two-col">
       <div class="card">
         <div class="card-title">VH — CDR Annotation (heuristic)</div>
         <div id="vhAnnot" class="seq-display"></div>
@@ -911,12 +961,16 @@ function renderExplain() {
         <span style="font-size:11px;color:${col};width:50px;text-align:right;white-space:nowrap">${dir}</span>
       </div>`;
     }).join('');
-    const rl=riskLevel(k,state.current.preds[k].value);
-    const cc={good:'chip-good',warn:'chip-warn',bad:'chip-bad',unreliable:'chip-mute'}[rl];
+    const predVal = state.current.preds[k].value;
+    const predRisk = riskLevel(k, predVal);
+    const riskLabel = {good:'Low Risk', warn:'Moderate Risk', bad:'High Risk', unreliable:'Unreliable'}[predRisk];
+    const riskCls = {good:'chip-good', warn:'chip-warn', bad:'chip-bad', unreliable:'chip-mute'}[predRisk];
     return `<div class="card" style="margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <strong>${k}</strong><span style="font-size:12px;color:var(--fg2)">${a.full}</span>
-        <span class="chip ${cc}" style="margin-left:auto">${a.source}</span>
+        <strong>${k}</strong>
+        <span style="font-size:12px;color:var(--fg2)">${a.full}</span>
+        <span style="font-size:11px;background:var(--surface2);color:var(--accent);padding:2px 8px;border-radius:12px;border:1px solid var(--border);margin-left:auto;white-space:nowrap">E1: ${a.source}</span>
+        <span class="chip ${riskCls}">${riskLabel} (${predVal.toFixed(2)} ${a.unit})</span>
       </div>
       ${!a.reliable?'<div class="warn-banner" style="margin-bottom:8px;font-size:11px">⚠ Unreliable assay (ρ ≈ 0) — attribution not actionable</div>':''}
       ${bars}
@@ -1050,6 +1104,189 @@ function toggleTheme() {
   try{const t=localStorage.getItem('abdevx_theme');if(t) document.documentElement.setAttribute('data-theme',t);}catch(e){}
   loadExample(0);
 })();
+
+// ─── 3D Structure Viewer ─────────────────────────────────────────────────────
+let viewer3d = null;
+let currentScheme = 'cdr';
+
+// Kabat CDR ranges for standard IgG1 Fab (chain H and L)
+const KABAT_CDR = {
+  H: [ {id:'H1', resi:'26-35',  color:'#E8513A'},
+       {id:'H2', resi:'50-65',  color:'#F4A43A'},
+       {id:'H3', resi:'95-102', color:'#B2182B'} ],
+  L: [ {id:'L1', resi:'24-34',  color:'#2166AC'},
+       {id:'L2', resi:'50-56',  color:'#4393C3'},
+       {id:'L3', resi:'89-97',  color:'#1565C0'} ]
+};
+
+const SCHEMES = {
+  cdr: {
+    label: 'CDR regions (Kabat)',
+    apply: (v) => {
+      v.setStyle({}, {cartoon:{color:'#C8D8E8', opacity:0.85}});
+      [...KABAT_CDR.H, ...KABAT_CDR.L].forEach(c => {
+        v.setStyle({chain:c.id[0], resi:c.resi},
+          {cartoon:{color:c.color}, stick:{color:c.color, radius:0.12}});
+      });
+      return [
+        {color:'#E8513A',label:'CDRH1'},{color:'#F4A43A',label:'CDRH2'},{color:'#B2182B',label:'CDRH3'},
+        {color:'#2166AC',label:'CDRL1'},{color:'#4393C3',label:'CDRL2'},{color:'#1565C0',label:'CDRL3'},
+        {color:'#C8D8E8',label:'Framework',textColor:'#4B6680'}
+      ];
+    }
+  },
+  agg: {
+    label: 'HAC / SMAC / HIC — hydrophobic patches drive aggregation',
+    apply: (v) => {
+      v.setStyle({}, {cartoon:{color:'#DDEEFF', opacity:0.7}});
+      // Hydrophobic residues
+      v.setStyle({resn:['VAL','ILE','LEU','MET']},
+        {cartoon:{color:'#F4A43A'}, stick:{color:'#F4A43A', radius:0.12}});
+      v.setStyle({resn:['PHE','TRP']},
+        {cartoon:{color:'#E08214'}, stick:{color:'#E08214', radius:0.15}});
+      v.setStyle({resn:['TYR']},
+        {cartoon:{color:'#C06000'}, stick:{color:'#C06000', radius:0.14}});
+      // CDRH3 — primary aggregation hotspot
+      v.setStyle({chain:'H', resi:'95-102'},
+        {cartoon:{color:'#B2182B'}, stick:{color:'#B2182B', radius:0.18}});
+      return [
+        {color:'#F4A43A',label:'Hydrophobic (V,I,L,M)'},
+        {color:'#E08214',label:'Aromatic (F,W)'},
+        {color:'#C06000',label:'Tyrosine (Y)'},
+        {color:'#B2182B',label:'CDRH3 (aggregation hotspot)'},
+        {color:'#DDEEFF',label:'Other',textColor:'#4B6680'}
+      ];
+    }
+  },
+  poly: {
+    label: 'AC-SINS / PR-CHO — aromatic & charge residues drive polyreactivity',
+    apply: (v) => {
+      v.setStyle({}, {cartoon:{color:'#E8E8F8', opacity:0.7}});
+      v.setStyle({resn:['PHE','TYR','TRP']},
+        {cartoon:{color:'#7B2D8B'}, stick:{color:'#7B2D8B', radius:0.15}});
+      v.setStyle({resn:['LYS','ARG']},
+        {cartoon:{color:'#2166AC'}, stick:{color:'#2166AC', radius:0.13}});
+      v.setStyle({resn:['ASP','GLU']},
+        {cartoon:{color:'#B2182B'}, stick:{color:'#B2182B', radius:0.13}});
+      // CDR loops (polyreactivity hotspots)
+      [...KABAT_CDR.H, ...KABAT_CDR.L].forEach(c => {
+        v.addStyle({chain:c.id[0], resi:c.resi}, {cartoon:{color:'transparent'}});
+      });
+      return [
+        {color:'#7B2D8B',label:'Aromatic (F,Y,W)'},
+        {color:'#2166AC',label:'Positive charge (K,R)'},
+        {color:'#B2182B',label:'Negative charge (D,E)'},
+        {color:'#E8E8F8',label:'Other',textColor:'#4B6680'}
+      ];
+    }
+  },
+  tm: {
+    label: 'Tm1 / Tm2 / Tonset — cysteine disulfides & core hydrophobic residues',
+    apply: (v) => {
+      v.setStyle({}, {cartoon:{color:'#E8F4F8', opacity:0.75}});
+      v.setStyle({resn:['CYS']},
+        {cartoon:{color:'#FFD700'}, stick:{color:'#FFD700', radius:0.22}});
+      v.setStyle({resn:['PRO']},
+        {cartoon:{color:'#4DAC26'}, stick:{color:'#4DAC26', radius:0.14}});
+      v.setStyle({resn:['LEU','ILE','VAL','PHE']},
+        {cartoon:{color:'#E08214'}, stick:{color:'#E08214', radius:0.10}});
+      v.setStyle({resn:['TRP']},
+        {cartoon:{color:'#E05060'}, stick:{color:'#E05060', radius:0.14}});
+      return [
+        {color:'#FFD700',label:'Cys (disulfide bonds)',textColor:'#8A7000'},
+        {color:'#4DAC26',label:'Pro (structural rigidity)'},
+        {color:'#E08214',label:'Core hydrophobic (L,I,V,F)'},
+        {color:'#E05060',label:'Trp (buried aromatic)'}
+      ];
+    }
+  },
+  charge: {
+    label: 'Charge distribution — electrostatic environment',
+    apply: (v) => {
+      v.setStyle({}, {cartoon:{color:'#E8E8F0', opacity:0.6}});
+      v.setStyle({resn:['LYS','ARG','HIS']},
+        {cartoon:{color:'#2166AC'}, stick:{color:'#2166AC', radius:0.14}});
+      v.setStyle({resn:['ASP','GLU']},
+        {cartoon:{color:'#B2182B'}, stick:{color:'#B2182B', radius:0.14}});
+      v.setStyle({resn:['ASN','GLN','SER','THR']},
+        {cartoon:{color:'#4DAC26'}, stick:{color:'#4DAC26', radius:0.10}});
+      return [
+        {color:'#2166AC',label:'Positive (K,R,H)'},
+        {color:'#B2182B',label:'Negative (D,E)'},
+        {color:'#4DAC26',label:'Polar uncharged (N,Q,S,T)'},
+        {color:'#E8E8F0',label:'Hydrophobic/other',textColor:'#4B6680'}
+      ];
+    }
+  }
+};
+
+function setViewerMsg(msg, isErr) {
+  const el = document.getElementById('viewerMsg');
+  if (!el) return;
+  el.style.display = msg ? 'block' : 'none';
+  el.style.color = isErr ? 'var(--bad)' : 'var(--fg2)';
+  el.textContent = msg;
+}
+
+function loadPDBFromRCSB(idOverride) {
+  const pdbId = (idOverride || document.getElementById('pdbIdInput').value.trim()).toUpperCase();
+  if (!pdbId || pdbId.length !== 4) { setViewerMsg('Enter a 4-character RCSB PDB ID (e.g. 1N8Z)', true); return; }
+  setViewerMsg(`Loading ${pdbId} from RCSB…`);
+  fetch(`https://files.rcsb.org/download/${pdbId}.pdb`)
+    .then(r => { if (!r.ok) throw new Error(`${pdbId} not found on RCSB`); return r.text(); })
+    .then(data => { initViewer3D(data); setViewerMsg(`Loaded ${pdbId}`, false); setTimeout(()=>setViewerMsg(''),2500); })
+    .catch(e => setViewerMsg(`Error: ${e.message}`, true));
+}
+
+function loadPDBFile(inp) {
+  const file = inp.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => { initViewer3D(ev.target.result); setViewerMsg(`Loaded ${file.name}`, false); setTimeout(()=>setViewerMsg(''),2500); };
+  reader.readAsText(file);
+}
+
+function initViewer3D(pdbData) {
+  if (typeof $3Dmol === 'undefined') { setViewerMsg('3Dmol.js not loaded — check internet connection', true); return; }
+  const container = document.getElementById('viewer3d');
+  container.innerHTML = '';
+  const dark = isDarkMode();
+  viewer3d = $3Dmol.createViewer(container, {
+    backgroundColor: dark ? '#162B44' : '#F8FAFC',
+    antialias: true,
+    id: 'viewer3d_canvas'
+  });
+  viewer3d.addModel(pdbData, 'pdb');
+  applyScheme(currentScheme);
+  viewer3d.zoomTo();
+  viewer3d.render();
+}
+
+function setColorScheme(scheme) {
+  currentScheme = scheme;
+  document.querySelectorAll('.scheme-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('scheme-' + scheme);
+  if (btn) btn.classList.add('active');
+  if (viewer3d) applyScheme(scheme);
+}
+
+function applyScheme(scheme) {
+  if (!viewer3d || !SCHEMES[scheme]) return;
+  viewer3d.removeAllShapes();
+  viewer3d.removeAllLabels();
+  const legend = SCHEMES[scheme].apply(viewer3d);
+  viewer3d.render();
+  renderViewerLegend(legend, SCHEMES[scheme].label);
+}
+
+function renderViewerLegend(items, title) {
+  const el = document.getElementById('viewerLegend');
+  if (!el) return;
+  el.innerHTML = `<span style="font-size:11px;color:var(--fg2);font-weight:600;margin-right:4px">${title}:</span>` +
+    items.map(item => {
+      const textCol = item.textColor || '#fff';
+      return `<span class="legend-chip" style="background:${item.color};color:${textCol}">${item.label}</span>`;
+    }).join('');
+}
 </script>
 </body>
 </html>
