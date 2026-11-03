@@ -288,8 +288,23 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
   <div id="sub-single">
     <div class="card">
       <div class="card-title">Antibody Identity</div>
-      <label for="abName">Antibody Name / ID</label>
-      <input type="text" id="abName" placeholder="e.g. mAb-001, Trastuzumab" value="">
+      <div class="input-row">
+        <div>
+          <label for="abName">Antibody Name / ID</label>
+          <input type="text" id="abName" placeholder="e.g. mAb-001, Trastuzumab" value="">
+        </div>
+        <div>
+          <label for="pdbIdSubmit">
+            RCSB PDB ID <span style="font-weight:400;color:var(--fg2)">(optional — for 3D structure viewer)</span>
+          </label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="text" id="pdbIdSubmit" placeholder="e.g. 1N8Z" style="max-width:120px;text-transform:uppercase"
+              oninput="this.value=this.value.toUpperCase();document.getElementById('pdbAutoNote').style.display='none'">
+            <span style="font-size:12px;color:var(--fg2)">or leave blank → ESMFold</span>
+          </div>
+          <div id="pdbAutoNote" style="display:none;font-size:11px;color:var(--good);margin-top:4px;font-weight:500"></div>
+        </div>
+      </div>
       <div class="input-row" style="margin-top:12px">
         <div>
           <label for="vhSeq">VH Sequence (amino acids)</label>
@@ -418,14 +433,28 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     <!-- 3D Structure Viewer -->
     <div class="card">
       <div class="card-title">3D Structure Viewer (3Dmol.js)</div>
+
+      <!-- Auto-load banner: shown when structure was set from Submit -->
+      <div id="autoLoadBanner" style="display:none" class="info-banner" style="margin-bottom:8px"></div>
+
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-        <input type="text" id="pdbIdInput" placeholder="RCSB PDB ID (e.g. 1N8Z)" style="max-width:180px;padding:6px 10px">
+        <input type="text" id="pdbIdInput" placeholder="RCSB PDB ID (e.g. 1N8Z)" style="max-width:160px;padding:6px 10px;text-transform:uppercase"
+          oninput="this.value=this.value.toUpperCase()">
         <button class="btn btn-sm" onclick="loadPDBFromRCSB()">Load from RCSB</button>
         <button class="btn btn-sm btn-ghost" onclick="document.getElementById('pdbFileInput').click()">Upload .pdb</button>
         <input type="file" id="pdbFileInput" accept=".pdb" style="display:none" onchange="loadPDBFile(this)">
-        <button class="btn btn-sm btn-ghost" onclick="loadPDBFromRCSB('1N8Z')">Demo: 1N8Z (Trastuzumab Fab)</button>
+        <button class="btn btn-sm btn-ghost" id="esmfoldBtn" onclick="foldFromSequence()"
+          title="Predict 3D structure from VH+VL sequence using ESMFold (Meta). Requires internet. ~30–60s.">
+          🔬 Predict from Sequence (ESMFold)
+        </button>
       </div>
       <div id="viewerMsg" style="font-size:12px;color:var(--fg2);margin-bottom:8px;display:none"></div>
+
+      <div class="info-banner" style="font-size:12px;margin-bottom:10px">
+        <strong>No PDB ID?</strong> Click <em>Predict from Sequence (ESMFold)</em> to fold VH+VL directly in the browser — no account needed. For higher accuracy, use
+        <a href="https://opig.stats.ox.ac.uk/webapps/abodybuilder3/" target="_blank" rel="noopener">ABodyBuilder3</a> or
+        <a href="https://alphafold.ebi.ac.uk/" target="_blank" rel="noopener">AlphaFold3</a>, then upload the .pdb here.
+      </div>
 
       <!-- Coloring scheme buttons -->
       <div style="margin-bottom:10px">
@@ -582,16 +611,19 @@ const AB_COLORS  = ['#2166AC','#E08214','#4DAC26','#B2182B','#7B2D8B','#4393C3',
 
 const DEMO_ABS = [
   { id:'mAb-A', name:'mAb-A',
+    pdb:'1N8Z',  // Trastuzumab Fab (HER2 binding, good developability profile)
     vh:'EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAVYYCSRWGGDGFYAMDYWGQGTLVTVSS',
     vl:'DIQMTQSPSSLSASVGDRVTITCRASQDVNTAVAWYQQKPGKAPKLLIYSASFLYSGVPSRFSGSRSGTDFTLTISSLQPEDFATYYCQQHYTTPPTFGQGTKVEIK',
     demo_vals:{ HAC:12.3, SMAC:7.8, HIC:18.5, 'AC-SINS':3.2, 'PR-CHO':0.41, Tm1:68.4, Tm2:78.5, Tonset:62.1, SEC:96.8, Titer:2.4 }
   },
   { id:'mAb-B', name:'mAb-B',
+    pdb:'3ULT',  // Adalimumab-like Fab (IgG1, aggregation-prone hydrophobic patches)
     vh:'QVQLVESGGGVVQPGRSLRLSCAASGFTFSSYGMHWVRQAPGKGLEWVAVISYDGSNKYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYCARDEGYYGSMDYWGQGTLVTVSS',
     vl:'DIQMTQSPSSLSASVGDRVTITCRSSQSLVHSNGNTYLHWYLQKPGQSPQLLIYKVSNRFSGVPDRFSGSGSGTDFTLKISRVEAEDVGVYYCFQGSHVPFTFGGGTKVEIK',
     demo_vals:{ HAC:28.4, SMAC:19.1, HIC:38.7, 'AC-SINS':4.2, 'PR-CHO':0.55, Tm1:63.1, Tm2:73.2, Tonset:57.4, SEC:91.2, Titer:1.8 }
   },
   { id:'mAb-C', name:'mAb-C',
+    pdb:'1HZH',  // Anti-lysozyme Fab (IgG1, elevated aromatic CDR content)
     vh:'QVQLQESGPGLVKPSQTLSLTCAVSGGSISSYYWSWIRQPPGKGLEWIGYIYYSGSTYYNPSLKSRVTISVDTSKNQFSLKLSSVTAADTAVYYCARRGLWFAYWGQGTLVTVSS',
     vl:'EIVLTQSPGTLSLSPGERATLSCRASQSVSSSYLAWYQQKPGQAPRLLIYGASSRATGIPDRFSGSGSGTDFTLTISRLEPEDFAVYYCQQYGSSPWTFGQGTRLEIK',
     demo_vals:{ HAC:16.8, SMAC:11.2, HIC:24.5, 'AC-SINS':9.8, 'PR-CHO':1.12, Tm1:66.8, Tm2:76.4, Tonset:60.2, SEC:95.1, Titer:2.1 }
@@ -698,17 +730,26 @@ function loadExample(i) {
   document.getElementById('abName').value=d.name;
   document.getElementById('vhSeq').value=d.vh;
   document.getElementById('vlSeq').value=d.vl;
+  // Auto-fill PDB ID from demo definition
+  const pdbInput=document.getElementById('pdbIdSubmit');
+  if(pdbInput) pdbInput.value=d.pdb||'';
   updateLens();
+  // Show confirmation badge next to PDB field if known
+  const badge=document.getElementById('pdbAutoNote');
+  if(badge&&d.pdb){ badge.textContent=`✓ PDB ${d.pdb} will auto-load in Structure tab`; badge.style.display='block'; }
 }
 function runSingle() {
   const name=document.getElementById('abName').value.trim()||'Unnamed';
   const vh=document.getElementById('vhSeq').value.trim().replace(/[^A-Za-z]/g,'').toUpperCase();
   const vl=document.getElementById('vlSeq').value.trim().replace(/[^A-Za-z]/g,'').toUpperCase();
+  const pdbId=(document.getElementById('pdbIdSubmit')?.value||'').trim().toUpperCase()||null;
   if(!vh||!vl){showMsg('Please enter both VH and VL sequences.',true);return;}
   if(vh.length<30){showMsg('VH appears too short (< 30 residues). Check input.',true);return;}
   const demo=DEMO_ABS.find(d=>d.vh.toUpperCase()===vh&&d.vl.toUpperCase()===vl);
   const preds=predictAll(vh,vl,demo?demo.demo_vals:null);
-  state.current={id:name.replace(/\s+/g,'-'),name,vh,vl,preds};
+  // Use PDB from field, or fall back to demo's known PDB
+  const resolvedPdb=pdbId||(demo?demo.pdb:null);
+  state.current={id:name.replace(/\s+/g,'-'),name,vh,vl,preds,pdbId:resolvedPdb};
   showMsg('Prediction complete — switching to Predict tab.',false);
   setTimeout(()=>showTab('predict'),350);
 }
@@ -898,6 +939,21 @@ function renderStructure() {
       <div class="prog-bar-wrap"><div class="prog-bar" style="width:${Math.min(100,g.frac*200)}%;background:${bcolors[g.cls]}"></div></div>
     </div>`
   ).join('');
+
+  // Auto-load 3D structure if PDB ID is stored in state and viewer is empty
+  if (cur.pdbId && !viewer3d) {
+    const pdbInput = document.getElementById('pdbIdInput');
+    if (pdbInput) pdbInput.value = cur.pdbId;
+    const banner = document.getElementById('autoLoadBanner');
+    if (banner) {
+      banner.textContent = `Auto-loading PDB ${cur.pdbId} for ${cur.name}…`;
+      banner.style.display = 'block';
+    }
+    setTimeout(() => {
+      loadPDBFromRCSB(cur.pdbId);
+      if (banner) setTimeout(() => { banner.style.display = 'none'; }, 3000);
+    }, 200);
+  }
 }
 function estimateMW(s){const mws={A:89,R:174,N:132,D:133,C:121,E:147,Q:146,G:75,H:155,I:131,L:131,K:146,M:149,F:165,P:115,S:105,T:119,W:204,Y:181,V:117};return s.split('').reduce((a,c)=>a+(mws[c]||110),0)-(s.length-1)*18;}
 function estimatePI(f){const kp=(f.cnt.K||0)*10.53+(f.cnt.R||0)*12.48+(f.cnt.H||0)*6.0,kn=(f.cnt.D||0)*3.65+(f.cnt.E||0)*4.25+(f.cnt.C||0)*8.18+(f.cnt.Y||0)*10.07;return clamp(4+(kp/(kn+1))*4,4,11);}
@@ -1243,6 +1299,37 @@ function loadPDBFile(inp) {
   const reader = new FileReader();
   reader.onload = ev => { initViewer3D(ev.target.result); setViewerMsg(`Loaded ${file.name}`, false); setTimeout(()=>setViewerMsg(''),2500); };
   reader.readAsText(file);
+}
+
+async function foldFromSequence() {
+  const cur = state.current;
+  if (!cur || !cur.vh || !cur.vl) {
+    setViewerMsg('No antibody loaded — run a prediction first from the Submit tab.', true);
+    return;
+  }
+  const btn = document.getElementById('esmfoldBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Folding… (30–60s)'; }
+  // Concatenate VH + (G4S)×3 linker + VL for single-chain fold
+  const linker = 'GGGGSGGGGSGGGGS';
+  const seq = cur.vh + linker + cur.vl;
+  setViewerMsg(`Submitting ${seq.length} aa to ESMFold…`);
+  try {
+    const resp = await fetch('https://api.esmatlas.com/foldSequence/v1/pdb/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: seq
+    });
+    if (!resp.ok) throw new Error(`ESMFold API error ${resp.status}: ${resp.statusText}`);
+    const pdbData = await resp.text();
+    if (!pdbData || !pdbData.includes('ATOM')) throw new Error('ESMFold returned empty structure');
+    initViewer3D(pdbData);
+    setViewerMsg(`ESMFold structure loaded (VH–linker–VL, ${seq.length} aa)`, false);
+    setTimeout(() => setViewerMsg(''), 3500);
+  } catch(e) {
+    setViewerMsg(`ESMFold failed: ${e.message}. Try again or use ABodyBuilder3 + Upload .pdb.`, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔬 Predict from Sequence (ESMFold)'; }
+  }
 }
 
 function initViewer3D(pdbData) {
