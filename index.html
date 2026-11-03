@@ -300,7 +300,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
           <div style="display:flex;gap:6px;align-items:center">
             <input type="text" id="pdbIdSubmit" placeholder="e.g. 1N8Z" style="max-width:120px;text-transform:uppercase"
               oninput="this.value=this.value.toUpperCase();document.getElementById('pdbAutoNote').style.display='none'">
-            <span style="font-size:12px;color:var(--fg2)">or leave blank → ABodyBuilder3</span>
+            <span style="font-size:12px;color:var(--fg2)">leave blank to use ABodyBuilder3 web app</span>
           </div>
           <div id="pdbAutoNote" style="display:none;font-size:11px;color:var(--good);margin-top:4px;font-weight:500"></div>
         </div>
@@ -443,18 +443,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
         <button class="btn btn-sm" onclick="loadPDBFromRCSB()">Load from RCSB</button>
         <button class="btn btn-sm btn-ghost" onclick="document.getElementById('pdbFileInput').click()">Upload .pdb</button>
         <input type="file" id="pdbFileInput" accept=".pdb" style="display:none" onchange="loadPDBFile(this)">
-        <button class="btn btn-sm btn-ghost" id="abb3Btn" onclick="foldFromSequence()"
-          title="Predict 3D structure using ABodyBuilder3 (Oxford OPIG) — same method used in the AbDev-X paper. Requires internet. ~20–40s.">
-          🔬 Predict with ABodyBuilder3 (paper method)
+        <button class="btn btn-sm btn-ghost" id="abb3Btn" onclick="openABodyBuilder3()"
+          title="Open ABodyBuilder3 (Oxford OPIG) — the structure predictor used in the AbDev-X paper — with your sequences pre-filled.">
+          🔬 ABodyBuilder3 (paper method) ↗
         </button>
       </div>
       <div id="viewerMsg" style="font-size:12px;color:var(--fg2);margin-bottom:8px;display:none"></div>
-
-      <div class="info-banner" style="font-size:12px;margin-bottom:10px">
-        <strong>No PDB ID?</strong> Click <em>Predict with ABodyBuilder3</em> — this is the same structure predictor used to train AbDev-X.
-        Alternatively, visit <a href="https://opig.stats.ox.ac.uk/webapps/abodybuilder3/" target="_blank" rel="noopener">ABodyBuilder3 web app</a>,
-        download the .pdb, and upload it here.
-      </div>
 
       <!-- Coloring scheme buttons -->
       <div style="margin-bottom:10px">
@@ -1164,6 +1158,63 @@ function toggleTheme() {
 // ─── 3D Structure Viewer ─────────────────────────────────────────────────────
 let viewer3d = null;
 let currentScheme = 'cdr';
+let pdbChainMap = {}; // chain letter → sorted array of resSeq numbers (sequential order)
+
+// Parse PDB ATOM records and build a map of chain → ordered unique resSeq values
+function parsePDBChainMap(pdbData) {
+  const seenKey = {};
+  const map = {};
+  pdbData.split('\n').forEach(line => {
+    if (!line.startsWith('ATOM')) return;
+    const chain = line[21];
+    const resSeq = parseInt(line.substring(22, 26));
+    if (isNaN(resSeq)) return;
+    const key = chain + '|' + resSeq;
+    if (seenKey[key]) return;
+    seenKey[key] = true;
+    if (!map[chain]) map[chain] = [];
+    map[chain].push(resSeq);
+  });
+  return map;
+}
+
+// Given a chain's sorted resSeq array and 1-based Kabat start/end positions,
+// return the actual resSeq range string for 3Dmol (e.g. "26-35")
+function kabatToResi(resSeqs, kabatStart, kabatEnd) {
+  if (!resSeqs || resSeqs.length === 0) return null;
+  const s = Math.max(0, kabatStart - 1);
+  const e = Math.min(resSeqs.length - 1, kabatEnd - 1);
+  if (s > resSeqs.length - 1) return null;
+  return resSeqs[s] + '-' + resSeqs[e];
+}
+
+// Detect which chains in the loaded PDB correspond to VH and VL
+// Tries H/L first (ABodyBuilder3 convention), then A/B (some RCSB Fabs)
+function detectChains() {
+  const keys = Object.keys(pdbChainMap);
+  if (pdbChainMap['H'] && pdbChainMap['L']) return { heavy: 'H', light: 'L' };
+  if (pdbChainMap['A'] && pdbChainMap['B']) return { heavy: 'A', light: 'B' };
+  // Fallback: longest chain = heavy, second = light
+  const sorted = keys.sort((a,b) => (pdbChainMap[b]||[]).length - (pdbChainMap[a]||[]).length);
+  return { heavy: sorted[0]||'H', light: sorted[1]||'L' };
+}
+
+// Build actual CDR resi selectors from the loaded structure
+function buildCDRSelectors() {
+  const { heavy, light } = detectChains();
+  const H = pdbChainMap[heavy] || [];
+  const L = pdbChainMap[light] || [];
+  return {
+    H: { chain: heavy,
+      H1: kabatToResi(H, 26, 35),
+      H2: kabatToResi(H, 50, 65),
+      H3: kabatToResi(H, 95, Math.min(102, H.length)) },
+    L: { chain: light,
+      L1: kabatToResi(L, 24, 34),
+      L2: kabatToResi(L, 50, 56),
+      L3: kabatToResi(L, 89, 97) }
+  };
+}
 
 // Kabat CDR ranges for standard IgG1 Fab (chain H and L)
 const KABAT_CDR = {
@@ -1180,8 +1231,18 @@ const SCHEMES = {
     label: 'CDR regions (Kabat)',
     apply: (v) => {
       v.setStyle({}, {cartoon:{color:'#C8D8E8', opacity:0.85}});
-      [...KABAT_CDR.H, ...KABAT_CDR.L].forEach(c => {
-        v.setStyle({chain:c.id[0], resi:c.resi},
+      const cdrs = buildCDRSelectors();
+      const loops = [
+        {chain:cdrs.H.chain, resi:cdrs.H.H1, color:'#E8513A', label:'CDRH1'},
+        {chain:cdrs.H.chain, resi:cdrs.H.H2, color:'#F4A43A', label:'CDRH2'},
+        {chain:cdrs.H.chain, resi:cdrs.H.H3, color:'#B2182B', label:'CDRH3'},
+        {chain:cdrs.L.chain, resi:cdrs.L.L1, color:'#2166AC', label:'CDRL1'},
+        {chain:cdrs.L.chain, resi:cdrs.L.L2, color:'#4393C3', label:'CDRL2'},
+        {chain:cdrs.L.chain, resi:cdrs.L.L3, color:'#1565C0', label:'CDRL3'},
+      ];
+      loops.forEach(c => {
+        if (!c.resi) return;
+        v.setStyle({chain:c.chain, resi:c.resi},
           {cartoon:{color:c.color}, stick:{color:c.color, radius:0.12}});
       });
       return [
@@ -1203,7 +1264,8 @@ const SCHEMES = {
       v.setStyle({resn:['TYR']},
         {cartoon:{color:'#C06000'}, stick:{color:'#C06000', radius:0.14}});
       // CDRH3 — primary aggregation hotspot
-      v.setStyle({chain:'H', resi:'95-102'},
+      const _agg = buildCDRSelectors();
+      if (_agg.H.H3) v.setStyle({chain:_agg.H.chain, resi:_agg.H.H3},
         {cartoon:{color:'#B2182B'}, stick:{color:'#B2182B', radius:0.18}});
       return [
         {color:'#F4A43A',label:'Hydrophobic (V,I,L,M)'},
@@ -1224,9 +1286,11 @@ const SCHEMES = {
         {cartoon:{color:'#2166AC'}, stick:{color:'#2166AC', radius:0.13}});
       v.setStyle({resn:['ASP','GLU']},
         {cartoon:{color:'#B2182B'}, stick:{color:'#B2182B', radius:0.13}});
-      // CDR loops (polyreactivity hotspots)
-      [...KABAT_CDR.H, ...KABAT_CDR.L].forEach(c => {
-        v.addStyle({chain:c.id[0], resi:c.resi}, {cartoon:{color:'transparent'}});
+      // CDR loops (polyreactivity hotspots) — outline with sphere
+      const _poly = buildCDRSelectors();
+      [[_poly.H.chain,_poly.H.H1],[_poly.H.chain,_poly.H.H2],[_poly.H.chain,_poly.H.H3],
+       [_poly.L.chain,_poly.L.L1],[_poly.L.chain,_poly.L.L2],[_poly.L.chain,_poly.L.L3]].forEach(([ch,rs])=>{
+        if (rs) v.addStyle({chain:ch, resi:rs}, {sphere:{radius:0.4, opacity:0.25, color:'#AAAAFF'}});
       });
       return [
         {color:'#7B2D8B',label:'Aromatic (F,Y,W)'},
@@ -1301,49 +1365,29 @@ function loadPDBFile(inp) {
   reader.readAsText(file);
 }
 
-async function foldFromSequence() {
+function openABodyBuilder3() {
   const cur = state.current;
-  if (!cur || !cur.vh || !cur.vl) {
-    setViewerMsg('No antibody loaded — run a prediction first from the Submit tab.', true);
-    return;
-  }
-  const btn = document.getElementById('abb3Btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Folding with ABodyBuilder3… (20–40s)'; }
-  setViewerMsg('Submitting VH + VL to ABodyBuilder3 (Oxford OPIG)…');
-  try {
-    // ABodyBuilder3 REST API — same predictor used in the AbDev-X paper
-    const resp = await fetch('https://opig.stats.ox.ac.uk/webapps/abodybuilder3/predict', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ heavy: cur.vh, light: cur.vl })
-    });
-    if (!resp.ok) throw new Error(`ABodyBuilder3 API error ${resp.status}`);
-    const result = await resp.json();
-    // API returns { pdb: "...", ... }
-    const pdbData = result.pdb || result.structure || result;
-    if (typeof pdbData !== 'string' || !pdbData.includes('ATOM')) {
-      throw new Error('ABodyBuilder3 returned unexpected format');
+  // Open ABodyBuilder3 web app (same predictor used in AbDev-X paper)
+  // Sequences are shown in a dialog so the user can paste them easily
+  if (cur && cur.vh && cur.vl) {
+    const msg = document.getElementById('viewerMsg');
+    if (msg) {
+      msg.style.display = 'block';
+      msg.style.color = 'var(--fg2)';
+      msg.innerHTML = `<strong>ABodyBuilder3 workflow:</strong> ` +
+        `Paste your VH and VL sequences into ` +
+        `<a href="https://opig.stats.ox.ac.uk/webapps/abodybuilder3/" target="_blank" rel="noopener" style="color:var(--accent)">ABodyBuilder3 web app</a>, ` +
+        `download the predicted .pdb, then click <strong>Upload .pdb</strong> above to visualise here.`;
     }
-    initViewer3D(pdbData);
-    setViewerMsg('ABodyBuilder3 structure loaded — same predictor as AbDev-X paper.', false);
-    setTimeout(() => setViewerMsg(''), 4000);
-  } catch(e) {
-    // CORS or API unavailable: guide user to manual workflow
-    const abb3url = `https://opig.stats.ox.ac.uk/webapps/abodybuilder3/`;
-    setViewerMsg(
-      `ABodyBuilder3 API unavailable (${e.message}). ` +
-      `Visit the ABodyBuilder3 web app, paste your sequences, download the .pdb, then use Upload .pdb above.`,
-      true
-    );
-    // Open ABodyBuilder3 in a new tab as fallback
-    window.open(abb3url, '_blank', 'noopener');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🔬 Predict with ABodyBuilder3 (paper method)'; }
+    window.open('https://opig.stats.ox.ac.uk/webapps/abodybuilder3/', '_blank', 'noopener');
+  } else {
+    setViewerMsg('Load an antibody from the Submit tab first, then use ABodyBuilder3 to predict its structure.', true);
   }
 }
 
 function initViewer3D(pdbData) {
   if (typeof $3Dmol === 'undefined') { setViewerMsg('3Dmol.js not loaded — check internet connection', true); return; }
+  pdbChainMap = parsePDBChainMap(pdbData);
   const container = document.getElementById('viewer3d');
   container.innerHTML = '';
   const dark = isDarkMode();
