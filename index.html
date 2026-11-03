@@ -295,12 +295,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
         </div>
         <div>
           <label for="pdbIdSubmit">
-            RCSB PDB ID <span style="font-weight:400;color:var(--fg2)">(optional — for 3D structure viewer)</span>
+            RCSB PDB ID <span style="font-weight:400;color:var(--fg2)">(optional — fetches sequences &amp; enables 3D viewer)</span>
           </label>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <input type="text" id="pdbIdSubmit" placeholder="e.g. 1N8Z" style="max-width:120px;text-transform:uppercase"
-              oninput="this.value=this.value.toUpperCase();document.getElementById('pdbAutoNote').style.display='none'">
-            <span style="font-size:12px;color:var(--fg2)">leave blank to use ABodyBuilder3 web app</span>
+              oninput="this.value=this.value.toUpperCase();document.getElementById('pdbAutoNote').style.display='none'"
+              onkeydown="if(event.key==='Enter')fetchPDBSequences()">
+            <button class="btn btn-sm" id="fetchSeqBtn" onclick="fetchPDBSequences()">Fetch Sequences ↓</button>
           </div>
           <div id="pdbAutoNote" style="display:none;font-size:11px;color:var(--good);margin-top:4px;font-weight:500"></div>
         </div>
@@ -529,6 +530,19 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     <div class="warn-banner">
       Associations shown are <em>consistent with known assay drivers</em>, not validated mechanisms. "Important feature" means predictive in the GDPa training set, not confirmed biology.
     </div>
+
+    <!-- Explain 3D viewer — auto-loads structure if available -->
+    <div id="explain3dCard" class="card" style="margin-bottom:16px;display:none">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <span class="card-title" style="margin:0">Structure — highlighted per assay</span>
+        <span id="explain3dSchemeLabel" style="font-size:12px;color:var(--fg2)"></span>
+        <span style="margin-left:auto;font-size:11px;color:var(--fg2)">Click an assay card below to update view</span>
+      </div>
+      <div id="explainViewer3d" style="width:100%;height:340px;border-radius:8px;overflow:hidden;background:var(--surface2)"></div>
+      <div id="explainViewerMsg" style="font-size:12px;color:var(--fg2);margin-top:6px;display:none"></div>
+      <div id="explainViewerLegend" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+    </div>
+
     <div id="explainGrid"></div>
   </div>
 </section>
@@ -989,6 +1003,22 @@ function renderExplain() {
   document.getElementById('explainEmpty').hidden=!!cur;
   document.getElementById('explainContent').hidden=!cur;
   if(!cur) return;
+
+  // Initialize explain 3D viewer
+  const explain3dCard = document.getElementById('explain3dCard');
+  if(explain3dCard) {
+    if(currentPDBData) {
+      explain3dCard.style.display = 'block';
+      if(!viewer3dExplain) initExplainViewer(currentPDBData, 'cdr');
+    } else if(cur.pdbId && !viewer3dExplain) {
+      explain3dCard.style.display = 'block';
+      setExplainViewerMsg('Loading structure…');
+      fetch(`https://files.rcsb.org/download/${cur.pdbId}.pdb`)
+        .then(r => { if(!r.ok) throw new Error('Not found'); return r.text(); })
+        .then(data => { currentPDBData = data; initExplainViewer(data, 'cdr'); setExplainViewerMsg(''); })
+        .catch(() => { explain3dCard.style.display = 'none'; });
+    }
+  }
   const f=computeFeats(cur.vh,cur.vl);
   const FG=[
     {label:'Hydrophobic fraction (VILMFYW)',val:f.hydro},
@@ -1015,12 +1045,14 @@ function renderExplain() {
     const predRisk = riskLevel(k, predVal);
     const riskLabel = {good:'Low Risk', warn:'Moderate Risk', bad:'High Risk', unreliable:'Unreliable'}[predRisk];
     const riskCls = {good:'chip-good', warn:'chip-warn', bad:'chip-bad', unreliable:'chip-mute'}[predRisk];
-    return `<div class="card" style="margin-bottom:12px">
+    const scheme3d = ASSAY_SCHEME[k];
+    return `<div class="card" style="margin-bottom:12px" id="explainCard_${k}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <strong>${k}</strong>
         <span style="font-size:12px;color:var(--fg2)">${a.full}</span>
-        <span style="font-size:11px;background:var(--surface2);color:var(--accent);padding:2px 8px;border-radius:12px;border:1px solid var(--border);margin-left:auto;white-space:nowrap">E1: ${a.source}</span>
+        <span style="font-size:11px;background:var(--surface2);color:var(--accent);padding:2px 8px;border-radius:12px;border:1px solid var(--border);white-space:nowrap">E1: ${a.source}</span>
         <span class="chip ${riskCls}">${riskLabel} (${predVal.toFixed(2)} ${a.unit})</span>
+        <button class="btn btn-sm btn-ghost" style="margin-left:auto;font-size:11px" onclick="highlightExplain('${k}')" title="Highlight relevant structural features for ${k}">🔬 View in 3D</button>
       </div>
       ${!a.reliable?'<div class="warn-banner" style="margin-bottom:8px;font-size:11px">⚠ Unreliable assay (ρ ≈ 0) — attribution not actionable</div>':''}
       ${bars}
@@ -1365,6 +1397,154 @@ function loadPDBFile(inp) {
   reader.readAsText(file);
 }
 
+// ─── PDB → Fetch Sequences ───────────────────────────────────────────────────
+async function fetchPDBSequences() {
+  const pdbId = (document.getElementById('pdbIdSubmit')?.value || '').trim().toUpperCase();
+  if (!pdbId || pdbId.length !== 4) { showMsg('Enter a valid 4-character PDB ID first (e.g. 1N8Z).', true); return; }
+  const btn = document.getElementById('fetchSeqBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Fetching…'; }
+  try {
+    const resp = await fetch(`https://www.rcsb.org/fasta/entry/${pdbId}/download`);
+    if (!resp.ok) throw new Error(`PDB ${pdbId} not found on RCSB`);
+    const fasta = await resp.text();
+    const chains = parseFASTAChains(fasta);
+    const { vh, vl, heavyId, lightId } = identifyAntibodyChains(chains);
+    if (!vh) throw new Error('Could not identify antibody chains — enter VH/VL sequences manually');
+    document.getElementById('vhSeq').value = vh;
+    if (vl) document.getElementById('vlSeq').value = vl;
+    updateLens();
+    showMsg(`Sequences fetched from PDB ${pdbId} (chain ${heavyId} → VH, chain ${lightId} → VL). Variable domain trimmed — check length is correct.`, false);
+  } catch(e) {
+    showMsg(`Fetch failed: ${e.message}`, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Fetch Sequences ↓'; }
+  }
+}
+
+function parseFASTAChains(fasta) {
+  const chains = [];
+  let cur = null;
+  fasta.split('\n').forEach(line => {
+    line = line.trim();
+    if (line.startsWith('>')) {
+      if (cur) chains.push(cur);
+      // >PDBID_N|Chains X[auth Y]|description
+      const authMatch = line.match(/\[auth\s+([A-Za-z0-9])\]/);
+      const chainMatch = line.match(/Chains?\s+([A-Za-z0-9])/);
+      const chainId = (authMatch?.[1] || chainMatch?.[1] || '').toUpperCase();
+      cur = { header: line, chain: chainId, seq: '' };
+    } else if (cur) {
+      cur.seq += line.replace(/[^A-Za-z]/g, '');
+    }
+  });
+  if (cur) chains.push(cur);
+  return chains.filter(c => c.seq.length > 60);
+}
+
+function identifyAntibodyChains(chains) {
+  // Prefer auth chain IDs 'H' (heavy) and 'L' (light)
+  let heavy = chains.find(c => c.chain === 'H');
+  let light  = chains.find(c => c.chain === 'L');
+  // Fallback: two longest chains in the 80–300 aa range
+  if (!heavy || !light) {
+    const ab = chains.filter(c => c.seq.length >= 80 && c.seq.length <= 350)
+                     .sort((a,b) => b.seq.length - a.seq.length);
+    if (!heavy) heavy = ab[0];
+    if (!light)  light = ab.find(c => c !== heavy);
+  }
+  return {
+    vh: heavy ? trimToVarDomain(heavy.seq, 'heavy') : null,
+    vl: light  ? trimToVarDomain(light.seq,  'light')  : null,
+    heavyId: heavy?.chain || '?',
+    lightId: light?.chain  || '?'
+  };
+}
+
+function trimToVarDomain(seq, type) {
+  if (type === 'heavy') {
+    // J-segment ends with "WGQG…TVTVSS" or "WGEG…TVTVSS"
+    const m = seq.match(/W[GD][QE]G[A-Z]{2,6}TVT/);
+    if (m) return seq.substring(0, m.index + m[0].length);
+    return seq.substring(0, 130);
+  } else {
+    // Kappa/lambda J-segment: "FGQG" or "FGGG" or "FGRG"
+    const m = seq.match(/[FYL]G[QRG]G[A-Z]{2,6}[VLI][EK]I/);
+    if (m) return seq.substring(0, m.index + m[0].length);
+    return seq.substring(0, 115);
+  }
+}
+
+// ─── Explain tab 3D viewer ───────────────────────────────────────────────────
+let viewer3dExplain = null;
+let currentPDBData  = null; // raw PDB text, stored when any structure is loaded
+
+const ASSAY_SCHEME = {
+  HAC:'agg', SMAC:'agg', HIC:'agg',
+  'AC-SINS':'poly', 'PR-CHO':'poly',
+  Tm1:'tm', Tm2:'tm', Tonset:'tm',
+  SEC:'cdr', Titer:'cdr'
+};
+
+function initExplainViewer(pdbData, scheme) {
+  if (typeof $3Dmol === 'undefined') return;
+  const container = document.getElementById('explainViewer3d');
+  if (!container) return;
+  container.innerHTML = '';
+  const dark = isDarkMode();
+  viewer3dExplain = $3Dmol.createViewer(container, {
+    backgroundColor: dark ? '#162B44' : '#F8FAFC', antialias: true
+  });
+  viewer3dExplain.addModel(pdbData, 'pdb');
+  applyExplainScheme(scheme || 'cdr');
+  viewer3dExplain.zoomTo();
+  viewer3dExplain.render();
+}
+
+function applyExplainScheme(scheme) {
+  if (!viewer3dExplain || !SCHEMES[scheme]) return;
+  viewer3dExplain.removeAllShapes();
+  viewer3dExplain.removeAllLabels();
+  const legend = SCHEMES[scheme].apply(viewer3dExplain);
+  viewer3dExplain.render();
+  const label = document.getElementById('explain3dSchemeLabel');
+  if (label) label.textContent = '— ' + SCHEMES[scheme].label;
+  renderExplainLegend(legend);
+}
+
+function renderExplainLegend(items) {
+  const el = document.getElementById('explainViewerLegend');
+  if (!el || !items) return;
+  el.innerHTML = items.map(item => {
+    const txtCol = item.textColor || '#fff';
+    return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${item.color}"></span>
+      <span style="color:var(--fg2)">${item.label}</span></span>`;
+  }).join('');
+}
+
+function setExplainViewerMsg(msg) {
+  const el = document.getElementById('explainViewerMsg');
+  if (!el) return;
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg;
+}
+
+function highlightExplain(assayKey) {
+  const scheme = ASSAY_SCHEME[assayKey] || 'cdr';
+  // Scroll the explain 3D card into view
+  const card = document.getElementById('explain3dCard');
+  if (card) card.scrollIntoView({behavior:'smooth', block:'nearest'});
+  // Highlight the active assay card
+  document.querySelectorAll('[id^="explainCard_"]').forEach(el => el.style.outline = '');
+  const active = document.getElementById(`explainCard_${assayKey}`);
+  if (active) active.style.outline = '2px solid var(--accent)';
+  if (viewer3dExplain) {
+    applyExplainScheme(scheme);
+  } else if (currentPDBData) {
+    initExplainViewer(currentPDBData, scheme);
+  }
+}
+
 function openABodyBuilder3() {
   const cur = state.current;
   // Open ABodyBuilder3 web app (same predictor used in AbDev-X paper)
@@ -1387,7 +1567,12 @@ function openABodyBuilder3() {
 
 function initViewer3D(pdbData) {
   if (typeof $3Dmol === 'undefined') { setViewerMsg('3Dmol.js not loaded — check internet connection', true); return; }
+  currentPDBData = pdbData;
   pdbChainMap = parsePDBChainMap(pdbData);
+  // Reset explain viewer so it re-initialises with new structure on next Explain visit
+  viewer3dExplain = null;
+  const explainCard = document.getElementById('explain3dCard');
+  if (explainCard) explainCard.style.display = 'block';
   const container = document.getElementById('viewer3d');
   container.innerHTML = '';
   const dark = isDarkMode();
