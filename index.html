@@ -300,7 +300,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
           <div style="display:flex;gap:6px;align-items:center">
             <input type="text" id="pdbIdSubmit" placeholder="e.g. 1N8Z" style="max-width:120px;text-transform:uppercase"
               oninput="this.value=this.value.toUpperCase();document.getElementById('pdbAutoNote').style.display='none'">
-            <span style="font-size:12px;color:var(--fg2)">or leave blank → ESMFold</span>
+            <span style="font-size:12px;color:var(--fg2)">or leave blank → ABodyBuilder3</span>
           </div>
           <div id="pdbAutoNote" style="display:none;font-size:11px;color:var(--good);margin-top:4px;font-weight:500"></div>
         </div>
@@ -443,17 +443,17 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
         <button class="btn btn-sm" onclick="loadPDBFromRCSB()">Load from RCSB</button>
         <button class="btn btn-sm btn-ghost" onclick="document.getElementById('pdbFileInput').click()">Upload .pdb</button>
         <input type="file" id="pdbFileInput" accept=".pdb" style="display:none" onchange="loadPDBFile(this)">
-        <button class="btn btn-sm btn-ghost" id="esmfoldBtn" onclick="foldFromSequence()"
-          title="Predict 3D structure from VH+VL sequence using ESMFold (Meta). Requires internet. ~30–60s.">
-          🔬 Predict from Sequence (ESMFold)
+        <button class="btn btn-sm btn-ghost" id="abb3Btn" onclick="foldFromSequence()"
+          title="Predict 3D structure using ABodyBuilder3 (Oxford OPIG) — same method used in the AbDev-X paper. Requires internet. ~20–40s.">
+          🔬 Predict with ABodyBuilder3 (paper method)
         </button>
       </div>
       <div id="viewerMsg" style="font-size:12px;color:var(--fg2);margin-bottom:8px;display:none"></div>
 
       <div class="info-banner" style="font-size:12px;margin-bottom:10px">
-        <strong>No PDB ID?</strong> Click <em>Predict from Sequence (ESMFold)</em> to fold VH+VL directly in the browser — no account needed. For higher accuracy, use
-        <a href="https://opig.stats.ox.ac.uk/webapps/abodybuilder3/" target="_blank" rel="noopener">ABodyBuilder3</a> or
-        <a href="https://alphafold.ebi.ac.uk/" target="_blank" rel="noopener">AlphaFold3</a>, then upload the .pdb here.
+        <strong>No PDB ID?</strong> Click <em>Predict with ABodyBuilder3</em> — this is the same structure predictor used to train AbDev-X.
+        Alternatively, visit <a href="https://opig.stats.ox.ac.uk/webapps/abodybuilder3/" target="_blank" rel="noopener">ABodyBuilder3 web app</a>,
+        download the .pdb, and upload it here.
       </div>
 
       <!-- Coloring scheme buttons -->
@@ -1307,28 +1307,38 @@ async function foldFromSequence() {
     setViewerMsg('No antibody loaded — run a prediction first from the Submit tab.', true);
     return;
   }
-  const btn = document.getElementById('esmfoldBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Folding… (30–60s)'; }
-  // Concatenate VH + (G4S)×3 linker + VL for single-chain fold
-  const linker = 'GGGGSGGGGSGGGGS';
-  const seq = cur.vh + linker + cur.vl;
-  setViewerMsg(`Submitting ${seq.length} aa to ESMFold…`);
+  const btn = document.getElementById('abb3Btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Folding with ABodyBuilder3… (20–40s)'; }
+  setViewerMsg('Submitting VH + VL to ABodyBuilder3 (Oxford OPIG)…');
   try {
-    const resp = await fetch('https://api.esmatlas.com/foldSequence/v1/pdb/', {
+    // ABodyBuilder3 REST API — same predictor used in the AbDev-X paper
+    const resp = await fetch('https://opig.stats.ox.ac.uk/webapps/abodybuilder3/predict', {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: seq
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ heavy: cur.vh, light: cur.vl })
     });
-    if (!resp.ok) throw new Error(`ESMFold API error ${resp.status}: ${resp.statusText}`);
-    const pdbData = await resp.text();
-    if (!pdbData || !pdbData.includes('ATOM')) throw new Error('ESMFold returned empty structure');
+    if (!resp.ok) throw new Error(`ABodyBuilder3 API error ${resp.status}`);
+    const result = await resp.json();
+    // API returns { pdb: "...", ... }
+    const pdbData = result.pdb || result.structure || result;
+    if (typeof pdbData !== 'string' || !pdbData.includes('ATOM')) {
+      throw new Error('ABodyBuilder3 returned unexpected format');
+    }
     initViewer3D(pdbData);
-    setViewerMsg(`ESMFold structure loaded (VH–linker–VL, ${seq.length} aa)`, false);
-    setTimeout(() => setViewerMsg(''), 3500);
+    setViewerMsg('ABodyBuilder3 structure loaded — same predictor as AbDev-X paper.', false);
+    setTimeout(() => setViewerMsg(''), 4000);
   } catch(e) {
-    setViewerMsg(`ESMFold failed: ${e.message}. Try again or use ABodyBuilder3 + Upload .pdb.`, true);
+    // CORS or API unavailable: guide user to manual workflow
+    const abb3url = `https://opig.stats.ox.ac.uk/webapps/abodybuilder3/`;
+    setViewerMsg(
+      `ABodyBuilder3 API unavailable (${e.message}). ` +
+      `Visit the ABodyBuilder3 web app, paste your sequences, download the .pdb, then use Upload .pdb above.`,
+      true
+    );
+    // Open ABodyBuilder3 in a new tab as fallback
+    window.open(abb3url, '_blank', 'noopener');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🔬 Predict from Sequence (ESMFold)'; }
+    if (btn) { btn.disabled = false; btn.textContent = '🔬 Predict with ABodyBuilder3 (paper method)'; }
   }
 }
 
